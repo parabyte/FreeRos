@@ -1,3 +1,5 @@
+This firmware is still broken unfortunately, i cant seem to get video to come up
+
 New BIOS implementation (C-only, IA16)
 
 Goal
