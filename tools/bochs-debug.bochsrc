@@ -1,0 +1,25 @@
+config_interface: textconfig
+display_library: x, options="no_gui_console"
+
+memory: guest=1, host=1
+cpu: model=i386, count=1, ips=2000000, reset_on_triple_fault=1
+clock: sync=none, time0=local
+
+log: /tmp/bochs-system.log
+debugger_log: /tmp/bochs-debugger.log
+panic: action=report
+error: action=report
+info: action=report
+debug: action=ignore
+
+romimage: file="/tmp/bochs-system-bios.bin", address=0xffff8000
+vgaromimage: file="/tmp/bochs-video-rom.bin"
+
+boot: floppy
+floppya: 720k="/home/gatekeeper/.pcem/test_media/new_bios_svdos_720k.img", status=inserted
+
+com1: enabled=1, mode=file, dev="/tmp/bochs-com1.log"
+port_e9_hack: enabled=1
+
+keyboard: type=mf
+mouse: enabled=0

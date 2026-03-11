@@ -1,0 +1,1285 @@
+#include <stdint.h>
+
+/*
+ * Instruction-accurate decompilation of the PC1640 system BIOS.
+ * 
+ * Each switch case corresponds to a single original instruction at the
+ * physical address shown in the case label (e.g. 0xFC0C9 == 0xFC00:0x00C9).
+ * Control flow is reconstructed via a dispatch loop over the linear `pc`.
+ * 
+ * Expectations:
+ * - cpu->mem points to a linear 1 MiB memory image; physical address = seg<<4+off.
+ * - The entry PC is the reset vector at 0xFFFF0.
+ * - io_in8/io_out8/int_call are callbacks for port I/O and INT handling.
+ * 
+ * This is meant for analysis and traceability, not hand-written source.
+ */
+
+/* I/O port constants used by this ROM. */
+#define PORT_PIC1_CMD 0x0020	/* 8259 PIC master command */
+#define PORT_PIT_CH2 0x0042	/* PIT channel 2 */
+#define PORT_PIT_MODE 0x0043	/* PIT mode/command */
+#define PORT_KBD_DATA 0x0060	/* Keyboard data */
+#define PORT_PPI_PORT_B 0x0061	/* PPI port B (speaker/port) */
+#define PORT_0x66 0x0066
+#define PORT_CMOS_ADDR 0x0070
+#define PORT_PIC2_CMD 0x00A0	/* 8259 PIC slave command */
+#define PORT_FDC_DOR 0x03F2	/* Floppy controller DOR */
+#define PORT_FDC_MSR 0x03F4	/* Floppy controller MSR */
+
+/* Absolute memory offsets used by this ROM. */
+#define OFF_0007 0x0007		/* IVT offset */
+#define OFF_0078 0x0078		/* IVT offset */
+#define OFF_007A 0x007A		/* IVT offset */
+#define OFF_0410 0x0410		/* BDA offset */
+#define OFF_0413 0x0413		/* BDA offset */
+#define OFF_0417 0x0417		/* BDA offset */
+#define OFF_0418 0x0418		/* BDA offset */
+#define OFF_0419 0x0419		/* BDA offset */
+#define OFF_041A 0x041A		/* BDA offset */
+#define OFF_041C 0x041C		/* BDA offset */
+#define OFF_043E 0x043E		/* BDA offset */
+#define OFF_043F 0x043F		/* BDA offset */
+#define OFF_0440 0x0440		/* BDA offset */
+#define OFF_0441 0x0441		/* BDA offset */
+#define OFF_0442 0x0442		/* BDA offset */
+#define OFF_0446 0x0446		/* BDA offset */
+#define OFF_0447 0x0447		/* BDA offset */
+#define OFF_0463 0x0463		/* BDA offset */
+#define OFF_0465 0x0465		/* BDA offset */
+#define OFF_046C 0x046C		/* BDA offset */
+#define OFF_046E 0x046E		/* BDA offset */
+#define OFF_0470 0x0470		/* BDA offset */
+#define OFF_0472 0x0472		/* BDA offset */
+#define OFF_0480 0x0480		/* BDA offset */
+#define OFF_0482 0x0482		/* BDA offset */
+#define OFF_0500 0x0500
+#define OFF_1919 0x1919
+
+/* Entry point addresses. */
+#define BIOS_POST_ENTRY_FC00_0000 0xFC000
+#define BIOS_VECTOR_INT_19_BOOTSTRAP_LOADER 0xFCAE5
+#define BIOS_VECTOR_INT_18_ROM_BASIC_BOOT_FAILURE 0xFCB2D
+#define BIOS_VECTOR_INT_12_CONVENTIONAL_MEMORY_SIZE 0xFCBCE
+#define BIOS_VECTOR_INT_11_EQUIPMENT_LIST 0xFCBD8
+#define BIOS_VECTOR_INT_15_SYSTEM_SERVICES 0xFCBE2
+#define BIOS_VECTOR_INT_1A_TIME_OF_DAY 0xFCCD6
+#define BIOS_VECTOR_INT_08_SYSTEM_TIMER 0xFCD24
+#define BIOS_VECTOR_INT_17_PRINTER_SERVICES 0xFCEB3
+#define BIOS_VECTOR_INT_05_PRINT_SCREEN 0xFCF34
+#define BIOS_VECTOR_INT_14_SERIAL_SERVICES 0xFCFAC
+#define BIOS_VECTOR_INT_16_KEYBOARD_SERVICES 0xFD100
+#define BIOS_VECTOR_INT_09_KEYBOARD 0xFD15F
+#define BIOS_VECTOR_INT_06_INT_06 0xFD32F
+#define BIOS_VECTOR_INT_02_INT_02 0xFD7BF
+#define BIOS_RESET_CONTINUATION_LJMP_FC00_00C9 0xFE05B
+#define BIOS_SCANCODE_HANDLER_FC00_2833 0xFE833
+#define BIOS_BEEP_ROUTINE_FC00_2838 0xFE838
+#define BIOS_CTRL_ALT_DEL_HANDLER_FC00_283D 0xFE83D
+#define BIOS_VECTOR_INT_13_DISK_SERVICES 0xFEC59
+#define BIOS_VECTOR_INT_0E_FLOPPY_IRQ6 0xFEF57
+#define BIOS_VECTOR_INT_1E_DISKETTE_PARAMETER_TABLE 0xFEFC7
+#define BIOS_VECTOR_INT_10_VIDEO_SERVICES 0xFF065
+#define BIOS_VECTOR_INT_1D_VIDEO_PARAMETER_TABLE 0xFF0A4
+#define BIOS_DISPLAY_ERROR_FC00_3EAC 0xFFEAC
+#define BIOS_REPORT_FAULTY_HARDWARE_FC00_3EB0 0xFFEB0
+#define BIOS_VECTOR_INT_0F_LPT1_IRQ7 0xFFF47
+#define BIOS_VECTOR_INT_1C_USER_TIMER_TICK 0xFFF4D
+#define BIOS_RESET_VECTOR 0xFFFF0
+
+/* ROM strings extracted from the original image (offsets relative to base). */
+typedef struct
+{
+  uint16_t off;
+  const char *s;
+} RomString;
+static const RomString rom_strings[] = {
+  {0x14E4, " d f!"},
+  {0x14EC, "!f!g\""},
+  {0x14F4, "\"g\"h#"},
+  {0x14FC, "#h#j$"},
+  {0x1504, "$j$k%"},
+  {0x150C, "%k%l&"},
+  {0x153C, "+|+z,"},
+  {0x1544, ",z,x-"},
+  {0x154C, "-x-c."},
+  {0x1554, ".c.v/"},
+  {0x155C, "/v/b0"},
+  {0x1564, "0b0n1"},
+  {0x156C, "1n1m2"},
+  {0x18D7, "Monter venligst nye batterier\\"},
+  {0x18F6, "\\Check Tastaturet og Musen"},
+  {0x1946, " en tast"},
+  {0x196C, "FEJL: "},
+  {0x1976, " RAM"},
+  {0x197D, " RAM"},
+  {0x19A6, "drev"},
+  {0x19BF, "tids ur"},
+  {0x19D1, "-port"},
+  {0x19DC, "-port"},
+  {0x19E5, " til mus"},
+  {0x19FF, " ROM"},
+  {0x1A05, "lager (paritets fejl)"},
+  {0x1A1B, "Vent et ojeblik !"},
+  {0x1A33, "Marts"},
+  {0x1A63, " kontrol enhed"},
+  {0x1A72, "Fejl i "},
+  {0x1A7A, "skaerm"},
+  {0x1AEF, "Veuillez mettre des piles neuves\\"},
+  {0x1B15, "rifiez le clavier et la souris"},
+  {0x1B50, "me dans le Drive A\\Puis tapez une touche quelconque"},
+  {0x1BC8, "Erreur : Defaillance "},
+  {0x1BE9, "d'interruptions"},
+  {0x1BFF, "ou du lecteur"},
+  {0x1C0D, "du chronometre"},
+  {0x1C1C, "du registre d'etat du systeme"},
+  {0x1C3A, "de l'horloge"},
+  {0x1C47, "du controleur VDU"},
+  {0x1C5A, "d'imprimante"},
+  {0x1C68, "serie"},
+  {0x1C6E, "des registres coordonnees souris"},
+  {0x1C8F, "des totalisations ROS"},
+  {0x1CA5, "Memoire (erreur de parite)"},
+  {0x1CC0, "Patientez"},
+  {0x1CCA, "Janvier"},
+  {0x1CD5, "vrier"},
+  {0x1CDB, "Mars"},
+  {0x1CE0, "Avril"},
+  {0x1CEA, "Juin"},
+  {0x1CEF, "Juillet"},
+  {0x1CFD, "Septembre"},
+  {0x1D07, "Octobre"},
+  {0x1D0F, "Novembre"},
+  {0x1D1B, "cembre"},
+  {0x1D2F, "du controleur "},
+  {0x1D3E, "de la RAM "},
+  {0x1D49, "de la sortie "},
+  {0x1DBC, "Batterie da sostituire\\"},
+  {0x1DD4, "\\Provare la tastiera e il mouse"},
+  {0x1DF4,
+   "\\Inserire un disco di SISTEMA nel Drive A\\Poi premere un tasto"},
+  {0x1E71, "Errore: "},
+  {0x1F6A, "verifica lettura della ROS fallita"},
+  {0x1F95, "a (errore di parita)"},
+  {0x1FAA, "Prego attendere"},
+  {0x1FBA, "Gennaio"},
+  {0x1FC2, "Febbraio"},
+  {0x1FCB, "Marzo"},
+  {0x1FD5, "Maggio"},
+  {0x1FDC, "Giugno"},
+  {0x1FE3, "Luglio"},
+  {0x1FEA, "Agosto"},
+  {0x1FF1, "Settembre"},
+  {0x1FFB, "Ottobre"},
+  {0x2003, "Novembre"},
+  {0x200C, "Dicembre"},
+  {0x2023, "controllore "},
+  {0x2030, " difettos"},
+  {0x203A, " di SISTEMA"},
+  {0x20C4, "V.g. anslut nya batterier\\"},
+  {0x20DF, "\\Kontrollera tangentbord och mus"},
+  {0x212D, "refter ner en tangent"},
+  {0x2170, "Fel: Felaktig"},
+  {0x2181, " RAM"},
+  {0x2186, " VDU RAM"},
+  {0x219C, " av direktminnesatkomst"},
+  {0x21BA, " eller skivenhet"},
+  {0x21DC, "tidsklocka"},
+  {0x21F2, "port"},
+  {0x21F9, "seriellport"},
+  {0x221C, "summa"},
+  {0x2222, "t minne (paritetsfel)"},
+  {0x2238, "V.g. vanta"},
+  {0x2243, "januari"},
+  {0x224B, "februari"},
+  {0x2254, "mars"},
+  {0x2259, "april"},
+  {0x2263, "juni"},
+  {0x2268, "juli"},
+  {0x226D, "augusti"},
+  {0x2275, "september"},
+  {0x227F, "oktober"},
+  {0x2287, "november"},
+  {0x2290, "december"},
+  {0x22A7, "kontroll"},
+  {0x22E5, "\\(c)1988 Amstrad plc\\"},
+  {0x22FB, "Januar"},
+  {0x2302, "Februar"},
+  {0x230A, "Juni"},
+  {0x230F, "Juli"},
+  {0x2314, "Oktober"},
+  {0x231C, "April"},
+  {0x2322, "August"},
+  {0x2330, "Oktober"},
+  {0x2344, "ember"},
+  {0x234A, "Error"},
+  {0x2350, "interval"},
+  {0x2359, "timer"},
+  {0x235F, " system"},
+  {0x2367, "status"},
+  {0x236E, "register"},
+  {0x2377, "SYSTEM"},
+  {0x237E, "real"},
+  {0x2383, "printer"},
+  {0x238B, " seriel"},
+  {0x2393, " port"},
+  {0x2399, " Extern"},
+  {0x23A1, "disk "},
+  {0x23A7, " ROM checksum"},
+  {0x23B5, "Direct Memory Access"},
+  {0x23CA, " Controller"},
+  {0x23D6, "Interrupt"},
+  {0x245F, "ponga piles nuevas\\"},
+  {0x24B3, "unidad A\\y luego pulse una tecla"},
+  {0x251B, ": fallo "},
+  {0x2536, "interrupciones"},
+  {0x2559, "memoria"},
+  {0x257C, "disco"},
+  {0x2583, "temporizador programable"},
+  {0x25B5, "tiempo real"},
+  {0x25FB, "coordenadas del raton"},
+  {0x2646, "paridad)"},
+  {0x2650, "espere"},
+  {0x2842, "enero"},
+  {0x2848, "febrero"},
+  {0x2850, "marzo"},
+  {0x2856, "abril"},
+  {0x285C, "mayo"},
+  {0x2861, "junio"},
+  {0x2867, "julio"},
+  {0x286D, "agosto"},
+  {0x2874, "setiembre"},
+  {0x287E, "octubre"},
+  {0x2886, "noviembre"},
+  {0x2890, "diciembre"},
+  {0x28A7, "en el "},
+  {0x28AE, "en la "},
+  {0x28B5, " de "},
+  {0x28BA, " del sistema"},
+  {0x28C7, "controlador de "},
+  {0x28D7, "Por favor, "},
+  {0x28E3, "establezca "},
+  {0x2A02, "neue Batterien einsetzen\\"},
+  {0x2A83, "cken"},
+  {0x2AC7, "Fehler"},
+  {0x2AD1, " RAM"},
+  {0x2AD7, "VDU RAM"},
+  {0x2B09, "Laufwerk"},
+  {0x2B13, "Zeitgeber"},
+  {0x2B20, " Status-Register"},
+  {0x2B31, " in der Echtzeit-Uhr"},
+  {0x2B4D, " am Ausgang fuer den System-Drucker"},
+  {0x2B71, " am seriellen System-Ausgang"},
+  {0x2B8E, " in den Steuer-Registern fuer die Maus"},
+  {0x2BB5, ": Falsche ROS-Pruefsumme"},
+  {0x2BCF, "Hauptspeicher (Parity-Fehler)"},
+  {0x2BEE, "warten"},
+  {0x2C2D, " im "},
+  {0x2C32, "Bitte "},
+  {0x3899, "fit new batteries\\"},
+  {0x38AC, "\\Check keyboard and mouse"},
+  {0x38DB, " A\\Then press any key"},
+  {0x391A, ": Faulty "},
+  {0x3929, "VDU RAM"},
+  {0x3959, " time clock"},
+  {0x3996, "memory (parity error)"},
+  {0x39AD, "wait"},
+  {0x39BA, "March"},
+  {0x39C7, "June"},
+  {0x39CC, "July"},
+  {0x39D7, "October"},
+  {0x39F4, "set "},
+  {0x39F9, "SYSTEM "},
+  {0x3A01, " disk"},
+  {0x3A07, " drive"},
+  {0x3A0E, "Please "},
+  {0x3AB7, "<fBBf<"},
+  {0x3AEE, "@p|~|p@"},
+  {0x3B06, "lllll"},
+  {0x3B11, "t444"},
+  {0x3BA1, ";nf;"},
+  {0x3C1E, "<f`|ff<"},
+  {0x3C2E, "<ff<ff<"},
+  {0x3CB6, "x00000x"},
+  {0x3E11, "``f<"},
+  {0x54E4, " d f!"},
+  {0x54EC, "!f!g\""},
+  {0x54F4, "\"g\"h#"},
+  {0x54FC, "#h#j$"},
+  {0x5504, "$j$k%"},
+  {0x550C, "%k%l&"},
+  {0x553C, "+|+z,"},
+  {0x5544, ",z,x-"},
+  {0x554C, "-x-c."},
+  {0x5554, ".c.v/"},
+  {0x555C, "/v/b0"},
+  {0x5564, "0b0n1"},
+  {0x556C, "1n1m2"},
+  {0x58D7, "Monter venligst nye batterier\\"},
+  {0x58F6, "\\Check Tastaturet og Musen"},
+  {0x5946, " en tast"},
+  {0x596C, "FEJL: "},
+  {0x5976, " RAM"},
+  {0x597D, " RAM"},
+  {0x59A6, "drev"},
+  {0x59BF, "tids ur"},
+  {0x59D1, "-port"},
+  {0x59DC, "-port"},
+  {0x59E5, " til mus"},
+  {0x59FF, " ROM"},
+  {0x5A05, "lager (paritets fejl)"},
+  {0x5A1B, "Vent et ojeblik !"},
+  {0x5A33, "Marts"},
+  {0x5A63, " kontrol enhed"},
+  {0x5A72, "Fejl i "},
+  {0x5A7A, "skaerm"},
+  {0x5AEF, "Veuillez mettre des piles neuves\\"},
+  {0x5B15, "rifiez le clavier et la souris"},
+  {0x5B50, "me dans le Drive A\\Puis tapez une touche quelconque"},
+  {0x5BC8, "Erreur : Defaillance "},
+  {0x5BE9, "d'interruptions"},
+  {0x5BFF, "ou du lecteur"},
+  {0x5C0D, "du chronometre"},
+  {0x5C1C, "du registre d'etat du systeme"},
+  {0x5C3A, "de l'horloge"},
+  {0x5C47, "du controleur VDU"},
+  {0x5C5A, "d'imprimante"},
+  {0x5C68, "serie"},
+  {0x5C6E, "des registres coordonnees souris"},
+  {0x5C8F, "des totalisations ROS"},
+  {0x5CA5, "Memoire (erreur de parite)"},
+  {0x5CC0, "Patientez"},
+  {0x5CCA, "Janvier"},
+  {0x5CD5, "vrier"},
+  {0x5CDB, "Mars"},
+  {0x5CE0, "Avril"},
+  {0x5CEA, "Juin"},
+  {0x5CEF, "Juillet"},
+  {0x5CFD, "Septembre"},
+  {0x5D07, "Octobre"},
+  {0x5D0F, "Novembre"},
+  {0x5D1B, "cembre"},
+  {0x5D2F, "du controleur "},
+  {0x5D3E, "de la RAM "},
+  {0x5D49, "de la sortie "},
+  {0x5DBC, "Batterie da sostituire\\"},
+  {0x5DD4, "\\Provare la tastiera e il mouse"},
+  {0x5DF4,
+   "\\Inserire un disco di SISTEMA nel Drive A\\Poi premere un tasto"},
+  {0x5E71, "Errore: "},
+  {0x5F6A, "verifica lettura della ROS fallita"},
+  {0x5F95, "a (errore di parita)"},
+  {0x5FAA, "Prego attendere"},
+  {0x5FBA, "Gennaio"},
+  {0x5FC2, "Febbraio"},
+  {0x5FCB, "Marzo"},
+  {0x5FD5, "Maggio"},
+  {0x5FDC, "Giugno"},
+  {0x5FE3, "Luglio"},
+  {0x5FEA, "Agosto"},
+  {0x5FF1, "Settembre"},
+  {0x5FFB, "Ottobre"},
+  {0x6003, "Novembre"},
+  {0x600C, "Dicembre"},
+  {0x6023, "controllore "},
+  {0x6030, " difettos"},
+  {0x603A, " di SISTEMA"},
+  {0x60C4, "V.g. anslut nya batterier\\"},
+  {0x60DF, "\\Kontrollera tangentbord och mus"},
+  {0x612D, "refter ner en tangent"},
+  {0x6170, "Fel: Felaktig"},
+  {0x6181, " RAM"},
+  {0x6186, " VDU RAM"},
+  {0x619C, " av direktminnesatkomst"},
+  {0x61BA, " eller skivenhet"},
+  {0x61DC, "tidsklocka"},
+  {0x61F2, "port"},
+  {0x61F9, "seriellport"},
+  {0x621C, "summa"},
+  {0x6222, "t minne (paritetsfel)"},
+  {0x6238, "V.g. vanta"},
+  {0x6243, "januari"},
+  {0x624B, "februari"},
+  {0x6254, "mars"},
+  {0x6259, "april"},
+  {0x6263, "juni"},
+  {0x6268, "juli"},
+  {0x626D, "augusti"},
+  {0x6275, "september"},
+  {0x627F, "oktober"},
+  {0x6287, "november"},
+  {0x6290, "december"},
+  {0x62A7, "kontroll"},
+  {0x62E5, "\\(c)1988 Amstrad plc\\"},
+  {0x62FB, "Januar"},
+  {0x6302, "Februar"},
+  {0x630A, "Juni"},
+  {0x630F, "Juli"},
+  {0x6314, "Oktober"},
+  {0x631C, "April"},
+  {0x6322, "August"},
+  {0x6330, "Oktober"},
+  {0x6344, "ember"},
+  {0x634A, "Error"},
+  {0x6350, "interval"},
+  {0x6359, "timer"},
+  {0x635F, " system"},
+  {0x6367, "status"},
+  {0x636E, "register"},
+  {0x6377, "SYSTEM"},
+  {0x637E, "real"},
+  {0x6383, "printer"},
+  {0x638B, " seriel"},
+  {0x6393, " port"},
+  {0x6399, " Extern"},
+  {0x63A1, "disk "},
+  {0x63A7, " ROM checksum"},
+  {0x63B5, "Direct Memory Access"},
+  {0x63CA, " Controller"},
+  {0x63D6, "Interrupt"},
+  {0x645F, "ponga piles nuevas\\"},
+  {0x64B3, "unidad A\\y luego pulse una tecla"},
+  {0x651B, ": fallo "},
+  {0x6536, "interrupciones"},
+  {0x6559, "memoria"},
+  {0x657C, "disco"},
+  {0x6583, "temporizador programable"},
+  {0x65B5, "tiempo real"},
+  {0x65FB, "coordenadas del raton"},
+  {0x6646, "paridad)"},
+  {0x6650, "espere"},
+  {0x6842, "enero"},
+  {0x6848, "febrero"},
+  {0x6850, "marzo"},
+  {0x6856, "abril"},
+  {0x685C, "mayo"},
+  {0x6861, "junio"},
+  {0x6867, "julio"},
+  {0x686D, "agosto"},
+  {0x6874, "setiembre"},
+  {0x687E, "octubre"},
+  {0x6886, "noviembre"},
+  {0x6890, "diciembre"},
+  {0x68A7, "en el "},
+  {0x68AE, "en la "},
+  {0x68B5, " de "},
+  {0x68BA, " del sistema"},
+  {0x68C7, "controlador de "},
+  {0x68D7, "Por favor, "},
+  {0x68E3, "establezca "},
+  {0x6A02, "neue Batterien einsetzen\\"},
+  {0x6A83, "cken"},
+  {0x6AC7, "Fehler"},
+  {0x6AD1, " RAM"},
+  {0x6AD7, "VDU RAM"},
+  {0x6B09, "Laufwerk"},
+  {0x6B13, "Zeitgeber"},
+  {0x6B20, " Status-Register"},
+  {0x6B31, " in der Echtzeit-Uhr"},
+  {0x6B4D, " am Ausgang fuer den System-Drucker"},
+  {0x6B71, " am seriellen System-Ausgang"},
+  {0x6B8E, " in den Steuer-Registern fuer die Maus"},
+  {0x6BB5, ": Falsche ROS-Pruefsumme"},
+  {0x6BCF, "Hauptspeicher (Parity-Fehler)"},
+  {0x6BEE, "warten"},
+  {0x6C2D, " im "},
+  {0x6C32, "Bitte "},
+  {0x7899, "fit new batteries\\"},
+  {0x78AC, "\\Check keyboard and mouse"},
+  {0x78DB, " A\\Then press any key"},
+  {0x791A, ": Faulty "},
+  {0x7929, "VDU RAM"},
+  {0x7959, " time clock"},
+  {0x7996, "memory (parity error)"},
+  {0x79AD, "wait"},
+  {0x79BA, "March"},
+  {0x79C7, "June"},
+  {0x79CC, "July"},
+  {0x79D7, "October"},
+  {0x79F4, "set "},
+  {0x79F9, "SYSTEM "},
+  {0x7A01, " disk"},
+  {0x7A07, " drive"},
+  {0x7A0E, "Please "},
+  {0x7AB7, "<fBBf<"},
+  {0x7AEE, "@p|~|p@"},
+  {0x7B06, "lllll"},
+  {0x7B11, "t444"},
+  {0x7BA1, ";nf;"},
+  {0x7C1E, "<f`|ff<"},
+  {0x7C2E, "<ff<ff<"},
+  {0x7CB6, "x00000x"},
+  {0x7E11, "``f<"},
+};
+
+static const uint16_t rom_string_count =
+  sizeof (rom_strings) / sizeof (rom_strings[0]);
+
+/* Minimal 8086 CPU state used by the execution model. */
+typedef struct CPU
+{
+  uint16_t ax, bx, cx, dx, si, di, bp, sp, ip;
+  uint16_t cs, ds, es, ss;
+  uint8_t cf, pf, af, zf, sf, of, df;
+  uint8_t iff;
+  uint8_t *mem;
+    uint8_t (*io_in8) (struct CPU *, uint16_t port);
+  void (*io_out8) (struct CPU *, uint16_t port, uint8_t value);
+  void (*int_call) (struct CPU *, uint8_t intno);
+} CPU;
+
+/* Segment:offset helpers and linear memory access. */
+static inline uint16_t
+addr16 (uint32_t v)
+{
+  return (uint16_t) (v & 0xFFFF);
+}
+
+static inline uint8_t
+mem8 (CPU *cpu, uint16_t seg, uint16_t off)
+{
+  return cpu->mem[((uint32_t) seg << 4) + off];
+}
+
+static inline uint16_t
+mem16 (CPU *cpu, uint16_t seg, uint16_t off)
+{
+  uint32_t a = ((uint32_t) seg << 4) + off;
+  return cpu->mem[a] | (cpu->mem[a + 1] << 8);
+}
+
+static inline void
+mem8_write (CPU *cpu, uint16_t seg, uint16_t off, uint8_t v)
+{
+  cpu->mem[((uint32_t) seg << 4) + off] = v;
+}
+
+static inline void
+mem16_write (CPU *cpu, uint16_t seg, uint16_t off, uint16_t v)
+{
+  uint32_t a = ((uint32_t) seg << 4) + off;
+  cpu->mem[a] = v & 0xFF;
+  cpu->mem[a + 1] = v >> 8;
+}
+
+static inline uint8_t
+parity8 (uint8_t v)
+{
+  return (__builtin_parity ((unsigned) v) == 0);
+}
+
+static inline uint16_t
+pack_flags (CPU *cpu)
+{
+  return (uint16_t) ((cpu->cf ? 1 : 0) |
+		     ((cpu->pf ? 1 : 0) << 2) |
+		     ((cpu->af ? 1 : 0) << 4) |
+		     ((cpu->zf ? 1 : 0) << 6) |
+		     ((cpu->sf ? 1 : 0) << 7) |
+		     ((cpu->iff ? 1 : 0) << 9) |
+		     ((cpu->df ? 1 : 0) << 10) |
+		     ((cpu->of ? 1 : 0) << 11) | 0x0002);
+}
+
+static inline void
+unpack_flags (CPU *cpu, uint16_t flags)
+{
+  cpu->cf = flags & 0x1;
+  cpu->pf = (flags >> 2) & 1;
+  cpu->af = (flags >> 4) & 1;
+  cpu->zf = (flags >> 6) & 1;
+  cpu->sf = (flags >> 7) & 1;
+  cpu->iff = (flags >> 9) & 1;
+  cpu->df = (flags >> 10) & 1;
+  cpu->of = (flags >> 11) & 1;
+}
+
+/* Byte accessors for 16-bit registers. */
+#define GET_LO(x) ((uint8_t)((x)&0xFF))
+#define GET_HI(x) ((uint8_t)(((x)>>8)&0xFF))
+static inline uint8_t
+get_al (CPU *cpu)
+{
+  return GET_LO (cpu->ax);
+}
+
+static inline uint8_t
+get_ah (CPU *cpu)
+{
+  return GET_HI (cpu->ax);
+}
+
+static inline uint8_t
+get_bl (CPU *cpu)
+{
+  return GET_LO (cpu->bx);
+}
+
+static inline uint8_t
+get_bh (CPU *cpu)
+{
+  return GET_HI (cpu->bx);
+}
+
+static inline uint8_t
+get_cl (CPU *cpu)
+{
+  return GET_LO (cpu->cx);
+}
+
+static inline uint8_t
+get_ch (CPU *cpu)
+{
+  return GET_HI (cpu->cx);
+}
+
+static inline uint8_t
+get_dl (CPU *cpu)
+{
+  return GET_LO (cpu->dx);
+}
+
+static inline uint8_t
+get_dh (CPU *cpu)
+{
+  return GET_HI (cpu->dx);
+}
+
+static inline void
+set_al (CPU *cpu, uint8_t v)
+{
+  cpu->ax = (cpu->ax & 0xFF00) | v;
+}
+
+static inline void
+set_ah (CPU *cpu, uint8_t v)
+{
+  cpu->ax = (cpu->ax & 0x00FF) | ((uint16_t) v << 8);
+}
+
+static inline void
+set_bl (CPU *cpu, uint8_t v)
+{
+  cpu->bx = (cpu->bx & 0xFF00) | v;
+}
+
+static inline void
+set_bh (CPU *cpu, uint8_t v)
+{
+  cpu->bx = (cpu->bx & 0x00FF) | ((uint16_t) v << 8);
+}
+
+static inline void
+set_cl (CPU *cpu, uint8_t v)
+{
+  cpu->cx = (cpu->cx & 0xFF00) | v;
+}
+
+static inline void
+set_ch (CPU *cpu, uint8_t v)
+{
+  cpu->cx = (cpu->cx & 0x00FF) | ((uint16_t) v << 8);
+}
+
+static inline void
+set_dl (CPU *cpu, uint8_t v)
+{
+  cpu->dx = (cpu->dx & 0xFF00) | v;
+}
+
+static inline void
+set_dh (CPU *cpu, uint8_t v)
+{
+  cpu->dx = (cpu->dx & 0x00FF) | ((uint16_t) v << 8);
+}
+
+/* Flag helpers for logical ops. */
+static inline void
+set_flags_logic8 (CPU *cpu, uint8_t r)
+{
+  cpu->zf = (r == 0);
+  cpu->sf = (r >> 7) & 1;
+  cpu->pf = parity8 (r);
+  cpu->cf = 0;
+  cpu->of = 0;
+  cpu->af = 0;
+}
+
+static inline void
+set_flags_logic16 (CPU *cpu, uint16_t r)
+{
+  cpu->zf = (r == 0);
+  cpu->sf = (r >> 15) & 1;
+  cpu->pf = parity8 ((uint8_t) r);
+  cpu->cf = 0;
+  cpu->of = 0;
+  cpu->af = 0;
+}
+
+static inline uint8_t
+logic8 (CPU *cpu, uint8_t r)
+{
+  set_flags_logic8 (cpu, r);
+  return r;
+}
+
+static inline uint16_t
+logic16 (CPU *cpu, uint16_t r)
+{
+  set_flags_logic16 (cpu, r);
+  return r;
+}
+
+/* ALU helpers that update flags in the 8086-compatible way. */
+static inline uint8_t
+add8 (CPU *cpu, uint8_t a, uint8_t b)
+{
+  uint16_t r = a + b;
+  cpu->cf = (r > 0xFF);
+  cpu->zf = ((uint8_t) r == 0);
+  cpu->sf = (r >> 7) & 1;
+  cpu->of = ((~(a ^ b) & (a ^ r)) >> 7) & 1;
+  cpu->af = ((a ^ b ^ r) & 0x10) != 0;
+  cpu->pf = parity8 ((uint8_t) r);
+  return (uint8_t) r;
+}
+
+static inline uint16_t
+add16 (CPU *cpu, uint16_t a, uint16_t b)
+{
+  uint32_t r = a + b;
+  cpu->cf = (r > 0xFFFF);
+  cpu->zf = ((uint16_t) r == 0);
+  cpu->sf = (r >> 15) & 1;
+  cpu->of = ((~(a ^ b) & (a ^ r)) >> 15) & 1;
+  cpu->af = ((a ^ b ^ r) & 0x10) != 0;
+  cpu->pf = parity8 ((uint8_t) r);
+  return (uint16_t) r;
+}
+
+static inline uint8_t
+sub8 (CPU *cpu, uint8_t a, uint8_t b)
+{
+  uint16_t r = a - b;
+  cpu->cf = (a < b);
+  cpu->zf = ((uint8_t) r == 0);
+  cpu->sf = (r >> 7) & 1;
+  cpu->of = (((a ^ b) & (a ^ r)) >> 7) & 1;
+  cpu->af = ((a ^ b ^ r) & 0x10) != 0;
+  cpu->pf = parity8 ((uint8_t) r);
+  return (uint8_t) r;
+}
+
+static inline uint16_t
+sub16 (CPU *cpu, uint16_t a, uint16_t b)
+{
+  uint32_t r = a - b;
+  cpu->cf = (a < b);
+  cpu->zf = ((uint16_t) r == 0);
+  cpu->sf = (r >> 15) & 1;
+  cpu->of = (((a ^ b) & (a ^ r)) >> 15) & 1;
+  cpu->af = ((a ^ b ^ r) & 0x10) != 0;
+  cpu->pf = parity8 ((uint8_t) r);
+  return (uint16_t) r;
+}
+
+static inline void
+cmp8 (CPU *cpu, uint8_t a, uint8_t b)
+{
+  (void) sub8 (cpu, a, b);
+}
+
+static inline void
+cmp16 (CPU *cpu, uint16_t a, uint16_t b)
+{
+  (void) sub16 (cpu, a, b);
+}
+
+static inline uint8_t
+inc8 (CPU *cpu, uint8_t a)
+{
+  uint8_t r = a + 1;
+  cpu->zf = (r == 0);
+  cpu->sf = (r >> 7) & 1;
+  cpu->of = (r == 0x80);
+  cpu->af = ((a ^ 1 ^ r) & 0x10) != 0;
+  cpu->pf = parity8 (r);
+  return r;
+}
+
+static inline uint16_t
+inc16 (CPU *cpu, uint16_t a)
+{
+  uint16_t r = a + 1;
+  cpu->zf = (r == 0);
+  cpu->sf = (r >> 15) & 1;
+  cpu->of = (r == 0x8000);
+  cpu->af = ((a ^ 1 ^ r) & 0x10) != 0;
+  cpu->pf = parity8 ((uint8_t) r);
+  return r;
+}
+
+static inline uint8_t
+dec8 (CPU *cpu, uint8_t a)
+{
+  uint8_t r = a - 1;
+  cpu->zf = (r == 0);
+  cpu->sf = (r >> 7) & 1;
+  cpu->of = (r == 0x7F);
+  cpu->af = ((a ^ 1 ^ r) & 0x10) != 0;
+  cpu->pf = parity8 (r);
+  return r;
+}
+
+static inline uint16_t
+dec16 (CPU *cpu, uint16_t a)
+{
+  uint16_t r = a - 1;
+  cpu->zf = (r == 0);
+  cpu->sf = (r >> 15) & 1;
+  cpu->of = (r == 0x7FFF);
+  cpu->af = ((a ^ 1 ^ r) & 0x10) != 0;
+  cpu->pf = parity8 ((uint8_t) r);
+  return r;
+}
+
+static inline uint8_t
+shl8 (CPU *cpu, uint8_t a, uint8_t c)
+{
+  uint8_t r = a << c;
+  if (c)
+    {
+      cpu->cf = (a >> (8 - c)) & 1;
+      cpu->of = (c == 1) ? (((r >> 7) & 1) ^ cpu->cf) : cpu->of;
+      cpu->zf = (r == 0);
+      cpu->sf = (r >> 7) & 1;
+      cpu->pf = parity8 (r);
+      cpu->af = 0;
+    }
+  return r;
+}
+
+static inline uint16_t
+shl16 (CPU *cpu, uint16_t a, uint8_t c)
+{
+  uint16_t r = a << c;
+  if (c)
+    {
+      cpu->cf = (a >> (16 - c)) & 1;
+      cpu->of = (c == 1) ? (((r >> 15) & 1) ^ cpu->cf) : cpu->of;
+      cpu->zf = (r == 0);
+      cpu->sf = (r >> 15) & 1;
+      cpu->pf = parity8 ((uint8_t) r);
+      cpu->af = 0;
+    }
+  return r;
+}
+
+static inline uint8_t
+shr8 (CPU *cpu, uint8_t a, uint8_t c)
+{
+  uint8_t r = a >> c;
+  if (c)
+    {
+      cpu->cf = (a >> (c - 1)) & 1;
+      cpu->of = (c == 1) ? ((a >> 7) & 1) : cpu->of;
+      cpu->zf = (r == 0);
+      cpu->sf = (r >> 7) & 1;
+      cpu->pf = parity8 (r);
+      cpu->af = 0;
+    }
+  return r;
+}
+
+static inline uint16_t
+shr16 (CPU *cpu, uint16_t a, uint8_t c)
+{
+  uint16_t r = a >> c;
+  if (c)
+    {
+      cpu->cf = (a >> (c - 1)) & 1;
+      cpu->of = (c == 1) ? ((a >> 15) & 1) : cpu->of;
+      cpu->zf = (r == 0);
+      cpu->sf = (r >> 15) & 1;
+      cpu->pf = parity8 ((uint8_t) r);
+      cpu->af = 0;
+    }
+  return r;
+}
+
+static inline uint8_t
+adc8 (CPU *cpu, uint8_t a, uint8_t b, uint8_t c)
+{
+  uint16_t r = a + b + c;
+  cpu->cf = (r > 0xFF);
+  cpu->zf = ((uint8_t) r == 0);
+  cpu->sf = (r >> 7) & 1;
+  cpu->of = ((~(a ^ b) & (a ^ r)) >> 7) & 1;
+  cpu->af = ((a ^ b ^ r) & 0x10) != 0;
+  cpu->pf = parity8 ((uint8_t) r);
+  return (uint8_t) r;
+}
+
+static inline uint16_t
+adc16 (CPU *cpu, uint16_t a, uint16_t b, uint8_t c)
+{
+  uint32_t r = a + b + c;
+  cpu->cf = (r > 0xFFFF);
+  cpu->zf = ((uint16_t) r == 0);
+  cpu->sf = (r >> 15) & 1;
+  cpu->of = ((~(a ^ b) & (a ^ r)) >> 15) & 1;
+  cpu->af = ((a ^ b ^ r) & 0x10) != 0;
+  cpu->pf = parity8 ((uint8_t) r);
+  return (uint16_t) r;
+}
+
+static inline uint8_t
+sbb8 (CPU *cpu, uint8_t a, uint8_t b, uint8_t c)
+{
+  uint16_t r = a - b - c;
+  cpu->cf = (a < (uint16_t) (b + c));
+  cpu->zf = ((uint8_t) r == 0);
+  cpu->sf = (r >> 7) & 1;
+  cpu->of = (((a ^ b) & (a ^ r)) >> 7) & 1;
+  cpu->af = ((a ^ b ^ r) & 0x10) != 0;
+  cpu->pf = parity8 ((uint8_t) r);
+  return (uint8_t) r;
+}
+
+static inline uint16_t
+sbb16 (CPU *cpu, uint16_t a, uint16_t b, uint8_t c)
+{
+  uint32_t r = a - b - c;
+  cpu->cf = (a < (uint32_t) (b + c));
+  cpu->zf = ((uint16_t) r == 0);
+  cpu->sf = (r >> 15) & 1;
+  cpu->of = (((a ^ b) & (a ^ r)) >> 15) & 1;
+  cpu->af = ((a ^ b ^ r) & 0x10) != 0;
+  cpu->pf = parity8 ((uint8_t) r);
+  return (uint16_t) r;
+}
+
+static inline uint8_t
+rcl8 (CPU *cpu, uint8_t a, uint8_t c)
+{
+  if (!c)
+    return a;
+  c &= 7;
+  uint16_t v = (uint16_t) (a | ((cpu->cf & 1) << 8));
+  v = (uint16_t) ((v << c) | (v >> (9 - c)));
+  cpu->cf = (v >> 8) & 1;
+  a = (uint8_t) (v & 0xFF);
+  if (c == 1)
+    cpu->of = ((a >> 7) & 1) ^ cpu->cf;
+  return a;
+}
+
+static inline uint16_t
+rcl16 (CPU *cpu, uint16_t a, uint8_t c)
+{
+  if (!c)
+    return a;
+  c &= 15;
+  uint32_t v = (uint32_t) (a | ((cpu->cf & 1) << 16));
+  v = (uint32_t) ((v << c) | (v >> (17 - c)));
+  cpu->cf = (v >> 16) & 1;
+  a = (uint16_t) (v & 0xFFFF);
+  if (c == 1)
+    cpu->of = ((a >> 15) & 1) ^ cpu->cf;
+  return a;
+}
+
+/* Stack and I/O helpers. */
+static inline void
+push16 (CPU *cpu, uint16_t v)
+{
+  cpu->sp -= 2;
+  mem16_write (cpu, cpu->ss, cpu->sp, v);
+}
+
+static inline uint16_t
+pop16 (CPU *cpu)
+{
+  uint16_t v = mem16 (cpu, cpu->ss, cpu->sp);
+  cpu->sp += 2;
+  return v;
+}
+
+static inline uint8_t
+io_in8 (CPU *cpu, uint16_t port)
+{
+  return cpu->io_in8 ? cpu->io_in8 (cpu, port) : 0xFF;
+}
+
+static inline void
+io_out8 (CPU *cpu, uint16_t port, uint8_t v)
+{
+  if (cpu->io_out8)
+    cpu->io_out8 (cpu, port, v);
+}
+
+static inline void
+bios_int (CPU *cpu, uint8_t n)
+{
+  if (cpu->int_call)
+    cpu->int_call (cpu, n);
+}
+
+/* String op helpers used by REP-prefixed instructions. */
+static inline void
+rep_stosw (CPU *cpu, int repne)
+{
+  (void) repne;
+  while (cpu->cx)
+    {
+      mem16_write (cpu, cpu->es, cpu->di, cpu->ax);
+      cpu->di += (cpu->df ? -2 : 2);
+      cpu->cx--;
+    }
+}
+
+static inline void
+rep_scasw (CPU *cpu, int repe)
+{
+  while (cpu->cx)
+    {
+      uint16_t v = mem16 (cpu, cpu->es, cpu->di);
+      cmp16 (cpu, cpu->ax, v);
+      cpu->di += (cpu->df ? -2 : 2);
+      cpu->cx--;
+      if (repe && !cpu->zf)
+	break;
+      if (!repe && cpu->zf)
+	break;
+    }
+}
+
+/* Entry point wrappers for easier testing and customization. */
+static void system_bios_exec_exec (CPU * cpu, uint32_t entry_pc);
+void
+system_bios_exec (CPU *cpu)
+{
+  system_bios_exec_exec (cpu, BIOS_RESET_VECTOR);
+}
+
+/* Video */
+void
+bios_vector_int_10_video_services (CPU *cpu)
+{
+  system_bios_exec_exec (cpu, BIOS_VECTOR_INT_10_VIDEO_SERVICES);
+}
+
+void
+bios_vector_int_1d_video_parameter_table (CPU *cpu)
+{
+  system_bios_exec_exec (cpu, BIOS_VECTOR_INT_1D_VIDEO_PARAMETER_TABLE);
+}
+
+/* Keyboard */
+void
+bios_vector_int_16_keyboard_services (CPU *cpu)
+{
+  system_bios_exec_exec (cpu, BIOS_VECTOR_INT_16_KEYBOARD_SERVICES);
+}
+
+void
+bios_vector_int_09_keyboard (CPU *cpu)
+{
+  system_bios_exec_exec (cpu, BIOS_VECTOR_INT_09_KEYBOARD);
+}
+
+void
+bios_scancode_handler_fc00_2833 (CPU *cpu)
+{
+  system_bios_exec_exec (cpu, BIOS_SCANCODE_HANDLER_FC00_2833);
+}
+
+/* Floppy/Disk */
+void
+bios_vector_int_13_disk_services (CPU *cpu)
+{
+  system_bios_exec_exec (cpu, BIOS_VECTOR_INT_13_DISK_SERVICES);
+}
+
+void
+bios_vector_int_0e_floppy_irq6 (CPU *cpu)
+{
+  system_bios_exec_exec (cpu, BIOS_VECTOR_INT_0E_FLOPPY_IRQ6);
+}
+
+void
+bios_vector_int_1e_diskette_parameter_table (CPU *cpu)
+{
+  system_bios_exec_exec (cpu, BIOS_VECTOR_INT_1E_DISKETTE_PARAMETER_TABLE);
+}
+
+/* Serial */
+void
+bios_vector_int_14_serial_services (CPU *cpu)
+{
+  system_bios_exec_exec (cpu, BIOS_VECTOR_INT_14_SERIAL_SERVICES);
+}
+
+/* Printer */
+void
+bios_vector_int_17_printer_services (CPU *cpu)
+{
+  system_bios_exec_exec (cpu, BIOS_VECTOR_INT_17_PRINTER_SERVICES);
+}
+
+void
+bios_vector_int_0f_lpt1_irq7 (CPU *cpu)
+{
+  system_bios_exec_exec (cpu, BIOS_VECTOR_INT_0F_LPT1_IRQ7);
+}
+
+/* Timer/RTC */
+void
+bios_vector_int_1a_time_of_day (CPU *cpu)
+{
+  system_bios_exec_exec (cpu, BIOS_VECTOR_INT_1A_TIME_OF_DAY);
+}
+
+void
+bios_vector_int_08_system_timer (CPU *cpu)
+{
+  system_bios_exec_exec (cpu, BIOS_VECTOR_INT_08_SYSTEM_TIMER);
+}
+
+void
+bios_vector_int_1c_user_timer_tick (CPU *cpu)
+{
+  system_bios_exec_exec (cpu, BIOS_VECTOR_INT_1C_USER_TIMER_TICK);
+}
+
+/* System */
+void
+bios_post_entry_fc00_0000 (CPU *cpu)
+{
+  system_bios_exec_exec (cpu, BIOS_POST_ENTRY_FC00_0000);
+}
+
+void
+bios_vector_int_19_bootstrap_loader (CPU *cpu)
+{
+  system_bios_exec_exec (cpu, BIOS_VECTOR_INT_19_BOOTSTRAP_LOADER);
+}
+
+void
+bios_vector_int_18_rom_basic_boot_failure (CPU *cpu)
+{
+  system_bios_exec_exec (cpu, BIOS_VECTOR_INT_18_ROM_BASIC_BOOT_FAILURE);
+}
+
+void
+bios_vector_int_12_conventional_memory_size (CPU *cpu)
+{
+  system_bios_exec_exec (cpu, BIOS_VECTOR_INT_12_CONVENTIONAL_MEMORY_SIZE);
+}
+
+void
+bios_vector_int_11_equipment_list (CPU *cpu)
+{
+  system_bios_exec_exec (cpu, BIOS_VECTOR_INT_11_EQUIPMENT_LIST);
+}
+
+void
+bios_vector_int_15_system_services (CPU *cpu)
+{
+  system_bios_exec_exec (cpu, BIOS_VECTOR_INT_15_SYSTEM_SERVICES);
+}
+
+void
+bios_reset_continuation_ljmp_fc00_00c9 (CPU *cpu)
+{
+  system_bios_exec_exec (cpu, BIOS_RESET_CONTINUATION_LJMP_FC00_00C9);
+}
+
+void
+bios_beep_routine_fc00_2838 (CPU *cpu)
+{
+  system_bios_exec_exec (cpu, BIOS_BEEP_ROUTINE_FC00_2838);
+}
+
+void
+bios_ctrl_alt_del_handler_fc00_283d (CPU *cpu)
+{
+  system_bios_exec_exec (cpu, BIOS_CTRL_ALT_DEL_HANDLER_FC00_283D);
+}
+
+void
+bios_display_error_fc00_3eac (CPU *cpu)
+{
+  system_bios_exec_exec (cpu, BIOS_DISPLAY_ERROR_FC00_3EAC);
+}
+
+void
+bios_report_faulty_hardware_fc00_3eb0 (CPU *cpu)
+{
+  system_bios_exec_exec (cpu, BIOS_REPORT_FAULTY_HARDWARE_FC00_3EB0);
+}
+
+void
+bios_reset_vector (CPU *cpu)
+{
+  system_bios_exec_exec (cpu, BIOS_RESET_VECTOR);
+}
+
+/* Misc */
+void
+bios_vector_int_05_print_screen (CPU *cpu)
+{
+  system_bios_exec_exec (cpu, BIOS_VECTOR_INT_05_PRINT_SCREEN);
+}
+
+void
+bios_vector_int_06_int_06 (CPU *cpu)
+{
+  system_bios_exec_exec (cpu, BIOS_VECTOR_INT_06_INT_06);
+}
+
+void
+bios_vector_int_02_int_02 (CPU *cpu)
+{
+  system_bios_exec_exec (cpu, BIOS_VECTOR_INT_02_INT_02);
+}
+
+/* Instruction-accurate execution engine. */
+static void
+system_bios_exec_exec (CPU *cpu, uint32_t entry_pc)
+{
+  uint32_t pc = entry_pc;
+  for (;;)
+    {
+      switch (pc)
+	{
+	case 0xFD7BF:		/* Vector INT 02 (INT 02) */
+	  {
+	    // [0xFD7BF] al = 0xe
+	    {
+	      uint16_t tmp = (uint16_t) (0xe);
+	      set_al (cpu, (uint8_t) (tmp));
+	    }
+	    pc = 0xFD7C1;
+	    break;
+	  }
+	case 0xFCF34:		/* Vector INT 05 (Print Screen) */
+	  {
+	    // [0xFCF34] IF=1 (enable maskable interrupts)
+	    cpu->iff = 1;
+	    pc = 0xFCF35;
+	    break;
+	  }
+	case 0xFD32F:		/* Vector INT 06 (INT 06) */
+	  {
+	    // [0xFD32F] flags = al & 0x80
+	    (void) logic8 (cpu, (uint8_t) (get_al (cpu) & 0x80));
+	    pc = 0xFD331;
+	    break;
+	  }
+	default:
+	  /* Unknown PC: stop to avoid executing garbage. */
+	  return;
+	}
+    }
+}
