@@ -1,3 +1,14 @@
+Permission is granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the "Software"),
+to use, compile, modify, and make derivative works of the Software **for non-commercial purposes only**,
+subject to the following conditions:
+
+1. The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.
+2. The Software may not be sold, offered for sale, licensed for a fee, or used in any commercial product or service without explicit prior written permission from the copyright holder.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND
+
+commercial purposes please contact me.
+
 FreeRos PC1640 Compatible BIOS
 ==============================
 
