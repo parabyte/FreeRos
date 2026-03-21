@@ -3,9 +3,162 @@
 /*
  * Original INT 1Eh diskette parameter table bytes from ROM address 0xFEFC7.
  */
-const u8 bios_diskette_parameter_table[11] = {
-  0xDF, 0x02, 0x64, 0x02, 0x09, 0x2A, 0xFF, 0x50, 0xF6, 0x0F, 0x04
-};
+#define BIOS_FLOPPY_DPT_360K \
+  { 0xDF, 0x02, 0x64, 0x02, 0x09, 0x2A, 0xFF, 0x50, 0xF6, 0x0F, 0x04 }
+#define BIOS_FLOPPY_DPT_720K \
+  { 0xDF, 0x02, 0x64, 0x02, 0x09, 0x2A, 0xFF, 0x50, 0xF6, 0x0F, 0x04 }
+
+typedef struct bios_floppy_drive_geometry
+{
+  u8 type;
+  u8 tracks;
+  u8 heads;
+  u8 sectors;
+  u8 data_rate;
+  const u8 *parameter_table;
+} bios_floppy_drive_geometry_t;
+
+static const u8 bios_diskette_parameter_table_360k[11] = BIOS_FLOPPY_DPT_360K;
+static const u8 bios_diskette_parameter_table_720k[11] = BIOS_FLOPPY_DPT_720K;
+
+#if BIOS_CFG_FLOPPY_TYPE_A == BIOS_FLOPPY_TYPE_720K_35DD
+const u8 bios_diskette_parameter_table[11] = BIOS_FLOPPY_DPT_720K;
+#else
+const u8 bios_diskette_parameter_table[11] = BIOS_FLOPPY_DPT_360K;
+#endif
+
+#undef BIOS_FLOPPY_DPT_360K
+#undef BIOS_FLOPPY_DPT_720K
+
+static u8 bios_floppy_configured_type (u8 drive);
+static int bios_floppy_geometry (u8 drive, bios_floppy_drive_geometry_t *geom);
+static const u8 *bios_floppy_parameter_table_for_drive (u8 drive);
+static u16 bios_floppy_last_track_cx (u8 drive);
+
+static u8
+bios_floppy_configured_type (u8 drive)
+{
+  switch (drive)
+    {
+    case 0:
+      return BIOS_CFG_FLOPPY_TYPE_A;
+
+    case 1:
+      return BIOS_CFG_FLOPPY_TYPE_B;
+
+    default:
+      return BIOS_FLOPPY_TYPE_NONE;
+    }
+}
+
+static int
+bios_floppy_geometry (u8 drive, bios_floppy_drive_geometry_t *geom)
+{
+  u8 type;
+
+  type = bios_floppy_configured_type (drive);
+  switch (type)
+    {
+    case BIOS_FLOPPY_TYPE_360K_525DD:
+      geom->type = type;
+      geom->tracks = 40;
+      geom->heads = 2;
+      geom->sectors = 9;
+      geom->data_rate = 0x02;
+      geom->parameter_table = bios_diskette_parameter_table_360k;
+      return 1;
+
+    case BIOS_FLOPPY_TYPE_720K_35DD:
+      geom->type = type;
+      geom->tracks = 80;
+      geom->heads = 2;
+      geom->sectors = 9;
+      geom->data_rate = 0x02;
+      geom->parameter_table = bios_diskette_parameter_table_720k;
+      return 1;
+
+    default:
+      return 0;
+    }
+}
+
+static const u8 *
+bios_floppy_parameter_table_for_drive (u8 drive)
+{
+  bios_floppy_drive_geometry_t geom;
+
+  if (bios_floppy_geometry (drive, &geom))
+    return geom.parameter_table;
+  return bios_diskette_parameter_table;
+}
+
+u8
+bios_floppy_drive_type (u8 drive)
+{
+  bios_floppy_drive_geometry_t geom;
+
+  if (!bios_floppy_geometry (drive, &geom))
+    return BIOS_FLOPPY_TYPE_NONE;
+  return geom.type;
+}
+
+u16
+bios_floppy_drive_capacity_kb (u8 drive)
+{
+  bios_floppy_drive_geometry_t geom;
+  u32 capacity_bytes;
+
+  if (!bios_floppy_geometry (drive, &geom))
+    return 0;
+
+  capacity_bytes =
+    (u32) geom.tracks * geom.heads * geom.sectors * BIOS_CFG_FLOPPY_SECTOR_SIZE;
+  return (u16) (capacity_bytes / 1024UL);
+}
+
+static u16
+bios_floppy_last_track_cx (u8 drive)
+{
+  bios_floppy_drive_geometry_t geom;
+  u16 last_track;
+
+  if (!bios_floppy_geometry (drive, &geom))
+    last_track = 39;
+  else
+    last_track = (u16) (geom.tracks - 1U);
+
+  return (u16) ((last_track & 0x00FFU) << 8)
+    | (u16) ((((last_track >> 2) & 0x00C0U)) | 0x01U);
+}
+
+static void
+bios_boot_setup_regs (bios_regs_t *regs, u16 ax, u16 bx, u16 cx, u16 dx)
+{
+  regs->ax = ax;
+  regs->bx = bx;
+  regs->cx = cx;
+  regs->dx = dx;
+  regs->si = 0x0000;
+  regs->di = 0x0000;
+  regs->bp = 0x0000;
+  regs->ds = 0x0000;
+  regs->es = 0x0000;
+  regs->flags = 0x0000;
+}
+
+static int
+bios_boot_sector_ready (void)
+{
+  return bios_abs_read16 (0x0000, 0x7DFE) == 0xAA55;
+}
+
+static int
+bios_fixed_disk_present (void)
+{
+  return bios_bda_read8 (BDA_HARD_DISK_COUNT) != 0
+    || bios_abs_read32 (0x0000, (u16) 0x41 * 4U) != 0
+    || bios_abs_read32 (0x0000, (u16) 0x46 * 4U) != 0;
+}
 
 static void
 bios_floppy_store_result_bytes (const u8 *result, u8 count)
@@ -14,14 +167,17 @@ bios_floppy_store_result_bytes (const u8 *result, u8 count)
 
   for (i = 0; i != 7; ++i)
     bios_bda_write8 ((u16) (BDA_FDC_RESULT_BASE + i),
-                     i < count ? result[i] : 0x00);
+		     i < count ? result[i] : 0x00);
 }
 
 static void
 bios_floppy_complete (bios_regs_t __far *regs, u8 status, u8 count)
 {
+  const u8 *table;
+
+  table = bios_diskette_parameter_table;
   bios_bda_write8 (BDA_FLOPPY_STATUS, status);
-  bios_bda_write8 (BDA_FLOPPY_MOTOR_TIMEOUT, bios_diskette_parameter_table[2]);
+  bios_bda_write8 (BDA_FLOPPY_MOTOR_TIMEOUT, table[2]);
   bios_set_hi (&regs->ax, status);
   bios_set_lo (&regs->ax, count);
   if (status == FLOPPY_ST_OK)
@@ -38,7 +194,8 @@ bios_floppy_complete (bios_regs_t __far *regs, u8 status, u8 count)
 static void
 bios_floppy_set_current_cylinder (u8 drive, u8 cylinder)
 {
-  bios_work_write8 (drive == 0 ? WK_FDC_CYLINDER_0 : WK_FDC_CYLINDER_1, cylinder);
+  bios_work_write8 (drive == 0 ? WK_FDC_CYLINDER_0 : WK_FDC_CYLINDER_1,
+		    cylinder);
 }
 
 static u8
@@ -57,28 +214,27 @@ static int
 bios_floppy_wait_irq (u16 attempts)
 {
   u16 spins;
-  u8 status;
 
   while (attempts-- != 0)
     {
-      for (spins = 0; spins != 0x0400; ++spins)
-        {
-          if (bios_work_read8 (WK_FDC_IRQ_PENDING) != 0)
-            {
-              bios_floppy_reset_irq ();
-              return 1;
-            }
-
-          status = (u8) (bios_hw_in8_p (PORT_FDC_MSR)
-                         & (FDC_STATUS_BUSY | FDC_STATUS_READY | FDC_STATUS_DIR));
-          if (status == FDC_STATUS_READY
-              || status == (u8) (FDC_STATUS_BUSY | FDC_STATUS_READY
-                                 | FDC_STATUS_DIR))
-            return 1;
-
-          bios_hw_pause ();
-        }
+      /*
+       * The original 1640DD INT 13h path waits on the IRQ6 completion flag
+       * for substantially longer than the short bring-up loop we used during
+       * earlier emulator debugging. Sector reads need enough time for motor
+       * spin/rotational latency, so keep the wait IRQ-driven and lengthen the
+       * inner window to a stock-like scale.
+       */
+      for (spins = 0; spins != 0x1000; ++spins)
+	{
+	  if (bios_work_read8 (WK_FDC_IRQ_PENDING) != 0)
+	    {
+	      bios_floppy_reset_irq ();
+	      return 1;
 	    }
+
+	  bios_hw_pause ();
+	}
+    }
 
   bios_serial_debug_puts ("FDC IRQ timeout msr=");
   bios_serial_debug_put_hex8 (bios_hw_in8 (PORT_FDC_MSR));
@@ -95,12 +251,12 @@ bios_floppy_output_byte (u8 value)
   for (attempts = 0; attempts != 0x4000; ++attempts)
     {
       status = (u8) (bios_hw_in8_p (PORT_FDC_MSR)
-                     & (FDC_STATUS_READY | FDC_STATUS_DIR));
+		     & (FDC_STATUS_READY | FDC_STATUS_DIR));
       if (status == FDC_STATUS_READY)
-        {
-          bios_hw_out8 (value, PORT_FDC_DATA);
-          return 1;
-        }
+	{
+	  bios_hw_out8 (value, PORT_FDC_DATA);
+	  return 1;
+	}
     }
 
   return 0;
@@ -116,22 +272,23 @@ bios_floppy_collect_result (u8 *result, u8 *count)
   for (attempts = 0; attempts != 0x4000; ++attempts)
     {
       status = (u8) (bios_hw_in8_p (PORT_FDC_MSR)
-                     & (FDC_STATUS_BUSY | FDC_STATUS_READY | FDC_STATUS_DIR));
+		     & (FDC_STATUS_BUSY | FDC_STATUS_READY | FDC_STATUS_DIR));
       if (status == FDC_STATUS_READY)
-        {
-          bios_floppy_store_result_bytes (result, *count);
-          return 1;
-        }
+	{
+	  bios_floppy_store_result_bytes (result, *count);
+	  return 1;
+	}
 
-      if (status == (u8) (FDC_STATUS_BUSY | FDC_STATUS_READY | FDC_STATUS_DIR))
-        {
-          if (*count >= 7)
-            return 0;
+      if (status ==
+	  (u8) (FDC_STATUS_BUSY | FDC_STATUS_READY | FDC_STATUS_DIR))
+	{
+	  if (*count >= 7)
+	    return 0;
 
-          result[*count] = bios_hw_in8_p (PORT_FDC_DATA);
-          (*count)++;
-          attempts = 0;
-        }
+	  result[*count] = bios_hw_in8_p (PORT_FDC_DATA);
+	  (*count)++;
+	  attempts = 0;
+	}
     }
 
   bios_floppy_store_result_bytes (result, *count);
@@ -155,25 +312,52 @@ bios_floppy_sense_interrupt (u8 *st0, u8 *pcn)
 }
 
 static void
-bios_floppy_select_drive (u8 drive)
+bios_floppy_wait_motor_start (const u8 *table)
 {
-  bios_bda_write8 (BDA_FLOPPY_MOTOR, (u8) (1U << drive));
-  bios_io_write (PORT_FDC_DOR, (u8) (0x0C | (u8) (0x10U << drive) | drive));
+  u16 wait_ticks;
+  u32 start_ticks;
+
+  wait_ticks = (u16) (((u16) table[10] * 9U + 3U) / 4U);
+  if (wait_ticks == 0)
+    wait_ticks = 1;
+
+  start_ticks = bios_bda_read32 (BDA_TIMER_TICKS);
+  while ((u32) (bios_bda_read32 (BDA_TIMER_TICKS) - start_ticks) < wait_ticks)
+    bios_hw_pause ();
+}
+
+static void
+bios_floppy_select_drive (u8 drive, const u8 *table)
+{
+  u8 motor_mask;
+  u8 motor_state;
+  int motor_was_off;
+
+  motor_mask = (u8) (1U << drive);
+  motor_state = (u8) (bios_bda_read8 (BDA_FLOPPY_MOTOR) & 0x0F);
+  motor_was_off = (motor_state & motor_mask) == 0;
+  motor_state = (u8) (motor_state | motor_mask);
+
+  bios_bda_write8 (BDA_FLOPPY_MOTOR, motor_state);
+  bios_io_write (PORT_FDC_DOR, (u8) (0x0C | drive | (u8) (motor_state << 4)));
+  if (motor_was_off)
+    bios_floppy_wait_motor_start (table);
 }
 
 static int
-bios_floppy_program_dma (const bios_regs_t __far *regs, u8 sectors)
+bios_floppy_program_dma (const bios_regs_t __far *regs, u8 sectors,
+			 u8 dma_mode)
 {
   u32 addr;
   u16 count;
 
   addr = ((u32) regs->es << 4) + regs->bx;
-  count = (u16) sectors * BIOS_CFG_FLOPPY_SECTOR_SIZE;
+  count = (u16) sectors *BIOS_CFG_FLOPPY_SECTOR_SIZE;
 
   bios_hw_disable_interrupts ();
   bios_hw_out8 ((u8) (DMA_CH2 | 0x04), PORT_DMA1_MASK);
   bios_hw_out8 (0x00, PORT_DMA1_CLEAR_FF);
-  bios_hw_out8 ((u8) (DMA_CH2 | DMA_MODE_READ), PORT_DMA1_MODE);
+  bios_hw_out8 ((u8) (DMA_CH2 | dma_mode), PORT_DMA1_MODE);
   bios_hw_out8 ((u8) (addr & 0xFF), PORT_DMA_CH2_ADDR);
   bios_hw_out8 ((u8) ((addr >> 8) & 0xFF), PORT_DMA_CH2_ADDR);
   bios_hw_out8 ((u8) ((addr >> 16) & 0xFF), PORT_DMA_PAGE_CH2);
@@ -186,36 +370,39 @@ bios_floppy_program_dma (const bios_regs_t __far *regs, u8 sectors)
 }
 
 static int
-bios_floppy_issue_specify (void)
+bios_floppy_issue_specify (const u8 *table)
 {
   return bios_floppy_output_byte (FDC_CMD_SPECIFY)
-         && bios_floppy_output_byte (bios_diskette_parameter_table[0])
-         && bios_floppy_output_byte (bios_diskette_parameter_table[1]);
+    && bios_floppy_output_byte (table[0])
+    && bios_floppy_output_byte (table[1]);
 }
 
 static int
 bios_floppy_reset_controller (void)
 {
+  const u8 *table;
   u8 st0;
   u8 pcn;
   u8 i;
+  u16 delay;
 
+  table = bios_diskette_parameter_table;
   bios_serial_debug_puts ("FDC reset begin\n");
   bios_floppy_reset_irq ();
   bios_bda_write8 (BDA_FLOPPY_RECAL, 0x00);
   bios_bda_write8 (BDA_FLOPPY_MOTOR, 0x00);
   bios_bda_write8 (BDA_FLOPPY_STATUS, FLOPPY_ST_OK);
-  bios_bda_write8 (BDA_FLOPPY_MOTOR_TIMEOUT, bios_diskette_parameter_table[2]);
+  bios_bda_write8 (BDA_FLOPPY_MOTOR_TIMEOUT, table[2]);
   bios_floppy_set_current_cylinder (0, 0xFF);
   bios_floppy_set_current_cylinder (1, 0xFF);
 
   bios_io_write (PORT_FDC_DOR, 0x08);
-  bios_hw_pause ();
-  bios_hw_pause ();
-  bios_io_write (PORT_FDC_CCR, BIOS_CFG_FLOPPY_RATE);
+  for (delay = 0; delay != 0x001E; ++delay)
+    bios_hw_pause ();
   bios_io_write (PORT_FDC_DOR, 0x0C);
 
-  if (!bios_floppy_wait_irq (32))
+  bios_hw_enable_interrupts ();
+  if (!bios_floppy_wait_irq (256))
     {
       bios_serial_debug_puts ("FDC reset no irq\n");
       return 0;
@@ -224,10 +411,10 @@ bios_floppy_reset_controller (void)
   for (i = 0; i != 4; ++i)
     {
       if (!bios_floppy_sense_interrupt (&st0, &pcn))
-        break;
+	break;
     }
 
-  if (!bios_floppy_issue_specify ())
+  if (!bios_floppy_issue_specify (table))
     {
       bios_serial_debug_puts ("FDC specify failed\n");
       return 0;
@@ -238,7 +425,7 @@ bios_floppy_reset_controller (void)
 }
 
 static int
-bios_floppy_recalibrate (u8 drive)
+bios_floppy_recalibrate (u8 drive, const u8 *table)
 {
   u8 st0;
   u8 pcn;
@@ -246,14 +433,15 @@ bios_floppy_recalibrate (u8 drive)
   bios_serial_debug_puts ("FDC recal ");
   bios_serial_debug_put_hex8 (drive);
   bios_serial_debug_puts ("\n");
-  bios_floppy_select_drive (drive);
+  bios_floppy_select_drive (drive, table);
   bios_floppy_reset_irq ();
 
   if (!bios_floppy_output_byte (FDC_CMD_RECALIBRATE)
       || !bios_floppy_output_byte (drive))
     return 0;
 
-  if (!bios_floppy_wait_irq (64))
+  bios_hw_enable_interrupts ();
+  if (!bios_floppy_wait_irq (256))
     {
       bios_serial_debug_puts ("FDC recal timeout\n");
       return 0;
@@ -269,7 +457,7 @@ bios_floppy_recalibrate (u8 drive)
 }
 
 static int
-bios_floppy_seek (u8 drive, u8 head, u8 cylinder)
+bios_floppy_seek (u8 drive, u8 head, u8 cylinder, const u8 *table)
 {
   u8 st0;
   u8 pcn;
@@ -277,7 +465,7 @@ bios_floppy_seek (u8 drive, u8 head, u8 cylinder)
   if (bios_floppy_current_cylinder (drive) == cylinder)
     return 1;
 
-  bios_floppy_select_drive (drive);
+  bios_floppy_select_drive (drive, table);
   bios_floppy_reset_irq ();
 
   bios_serial_debug_puts ("FDC seek ");
@@ -291,7 +479,8 @@ bios_floppy_seek (u8 drive, u8 head, u8 cylinder)
       || !bios_floppy_output_byte (cylinder))
     return 0;
 
-  if (!bios_floppy_wait_irq (64))
+  bios_hw_enable_interrupts ();
+  if (!bios_floppy_wait_irq (256))
     {
       bios_serial_debug_puts ("FDC seek timeout\n");
       return 0;
@@ -318,11 +507,10 @@ bios_floppy_status_from_result (const u8 *result)
 
   if ((st0 & FDC_ST0_INTERRUPT_MASK) == 0x00
       && (st1 & (FDC_ST1_MISSING_ADDRESS_MARK | FDC_ST1_NO_DATA
-                 | FDC_ST1_OVERRUN | FDC_ST1_CRC | FDC_ST1_WRITE_PROTECT))
-         == 0
+		 | FDC_ST1_OVERRUN | FDC_ST1_CRC | FDC_ST1_WRITE_PROTECT))
+      == 0
       && (st2 & (FDC_ST2_MISSING_ADDRESS_MARK | FDC_ST2_WRONG_CYLINDER
-                 | FDC_ST2_BAD_CYLINDER | FDC_ST2_CRC))
-         == 0)
+		 | FDC_ST2_BAD_CYLINDER | FDC_ST2_CRC)) == 0)
     return FLOPPY_ST_OK;
 
   if ((st1 & FDC_ST1_WRITE_PROTECT) != 0)
@@ -344,7 +532,9 @@ bios_floppy_status_from_result (const u8 *result)
 static int
 bios_floppy_drive_valid (u8 drive)
 {
-  return drive < BIOS_CFG_FLOPPY_DRIVES;
+  bios_floppy_drive_geometry_t geom;
+
+  return bios_floppy_geometry (drive, &geom);
 }
 
 static u16
@@ -362,15 +552,20 @@ bios_floppy_sector (const bios_regs_t __far *regs)
 static int
 bios_floppy_dma_boundary_crossed (const bios_regs_t __far *regs, u8 sectors)
 {
+  u32 dma_addr;
+  u16 dma_offset;
   u16 byte_count;
 
-  byte_count = (u16) sectors * BIOS_CFG_FLOPPY_SECTOR_SIZE;
-  return (u16) (regs->bx + byte_count) < regs->bx;
+  dma_addr = ((u32) regs->es << 4) + regs->bx;
+  dma_offset = (u16) dma_addr;
+  byte_count = (u16) sectors *BIOS_CFG_FLOPPY_SECTOR_SIZE;
+  return (u16) (dma_offset + byte_count - 1U) < dma_offset;
 }
 
 static int
 bios_floppy_validate_transfer (const bios_regs_t __far *regs, u8 *status,
-                               int require_dma)
+				       int require_dma,
+				       bios_floppy_drive_geometry_t *geom)
 {
   u8 count;
   u8 drive;
@@ -384,7 +579,7 @@ bios_floppy_validate_transfer (const bios_regs_t __far *regs, u8 *status,
   sector = bios_floppy_sector (regs);
   cylinder = bios_floppy_cylinder (regs);
 
-  if (!bios_floppy_drive_valid (drive))
+  if (!bios_floppy_geometry (drive, geom))
     {
       *status = FLOPPY_ST_BAD_COMMAND;
       return 0;
@@ -396,11 +591,11 @@ bios_floppy_validate_transfer (const bios_regs_t __far *regs, u8 *status,
       return 0;
     }
 
-  if (head >= BIOS_CFG_FLOPPY_HEADS
-      || cylinder >= BIOS_CFG_FLOPPY_TRACKS
+  if (head >= geom->heads
+      || cylinder >= geom->tracks
       || sector == 0
-      || sector > BIOS_CFG_FLOPPY_SECTORS
-      || (u16) sector + count - 1 > BIOS_CFG_FLOPPY_SECTORS)
+      || sector > geom->sectors
+      || (u16) sector + count - 1 > geom->sectors)
     {
       *status = FLOPPY_ST_SECTOR_NOT_FOUND;
       return 0;
@@ -419,24 +614,43 @@ bios_floppy_validate_transfer (const bios_regs_t __far *regs, u8 *status,
 static void
 bios_floppy_get_parameters (bios_regs_t __far *regs)
 {
+  bios_floppy_drive_geometry_t geom;
   u16 max_cylinder;
+  u8 drive;
   u8 max_sector;
   u8 max_head;
 
-  max_cylinder = (u16) (BIOS_CFG_FLOPPY_TRACKS - 1);
-  max_sector = BIOS_CFG_FLOPPY_SECTORS;
-  max_head = (u8) (BIOS_CFG_FLOPPY_HEADS - 1);
+  drive = bios_lo (regs->dx);
+  if (!bios_floppy_geometry (drive, &geom))
+    {
+      bios_floppy_complete (regs, FLOPPY_ST_BAD_COMMAND, 0);
+      return;
+    }
 
-  regs->bx = BIOS_CFG_FLOPPY_TYPE_A;
+  max_cylinder = (u16) (geom.tracks - 1);
+  max_sector = geom.sectors;
+  max_head = (u8) (geom.heads - 1);
+
+  regs->bx = geom.type;
   regs->cx = (u16) ((max_cylinder & 0x00FF) << 8)
-             | (u16) (((max_cylinder >> 2) & 0xC0) | max_sector);
+    | (u16) (((max_cylinder >> 2) & 0xC0) | max_sector);
   regs->dx = (u16) max_head << 8 | BIOS_CFG_FLOPPY_DRIVES;
+
+  /*
+   * Return the diskette parameter table pointer in ES:DI. MS-DOS 3.30
+   * reads the table through this pointer after AH=08h to determine
+   * sector size, gap length, and other geometry details.
+   */
+  regs->di = BIOS_FP_OFF ((void __far *) geom.parameter_table);
+  regs->es = BIOS_ROM_SEGMENT;
+
   bios_floppy_complete (regs, FLOPPY_ST_OK, 0);
 }
 
 static void
-bios_floppy_read (bios_regs_t __far *regs)
+bios_floppy_transfer (bios_regs_t __far *regs, u8 dma_mode, u8 fdc_command)
 {
+  bios_floppy_drive_geometry_t geom;
   u8 count;
   u8 drive;
   u8 head;
@@ -446,7 +660,7 @@ bios_floppy_read (bios_regs_t __far *regs)
   u8 status;
   u16 cylinder;
 
-  if (!bios_floppy_validate_transfer (regs, &status, 1))
+  if (!bios_floppy_validate_transfer (regs, &status, 1, &geom))
     {
       bios_floppy_complete (regs, status, 0);
       return;
@@ -458,37 +672,39 @@ bios_floppy_read (bios_regs_t __far *regs)
   sector = bios_floppy_sector (regs);
   cylinder = bios_floppy_cylinder (regs);
 
-  bios_floppy_select_drive (drive);
-  bios_io_write (PORT_FDC_CCR, BIOS_CFG_FLOPPY_RATE);
+  bios_floppy_select_drive (drive, geom.parameter_table);
+  bios_io_write (PORT_FDC_CCR, geom.data_rate);
 
-  if (!bios_floppy_issue_specify ())
+  if (!bios_floppy_issue_specify (geom.parameter_table))
     {
       bios_floppy_complete (regs, FLOPPY_ST_TIMEOUT, 0);
       return;
     }
 
   if (bios_floppy_current_cylinder (drive) == 0xFF
-      && !bios_floppy_recalibrate (drive))
+      && !bios_floppy_recalibrate (drive, geom.parameter_table))
     {
       bios_floppy_complete (regs, FLOPPY_ST_RESET_FAILED, 0);
       return;
     }
 
-  if (!bios_floppy_seek (drive, head, (u8) cylinder))
+  if (!bios_floppy_seek (drive, head, (u8) cylinder, geom.parameter_table))
     {
       bios_floppy_set_current_cylinder (drive, 0xFF);
-      if (!bios_floppy_recalibrate (drive)
-          || !bios_floppy_seek (drive, head, (u8) cylinder))
-        {
-          bios_floppy_complete (regs, FLOPPY_ST_SEEK_FAILED, 0);
-          return;
-        }
+      if (!bios_floppy_recalibrate (drive, geom.parameter_table)
+		  || !bios_floppy_seek (drive, head, (u8) cylinder,
+					geom.parameter_table))
+		{
+		  bios_floppy_complete (regs, FLOPPY_ST_SEEK_FAILED, 0);
+		  return;
+	}
     }
 
-  bios_floppy_program_dma (regs, count);
+  bios_floppy_program_dma (regs, count, dma_mode);
   bios_floppy_reset_irq ();
 
-  bios_serial_debug_puts ("FDC read c=");
+  bios_serial_debug_puts (fdc_command == FDC_CMD_WRITE_DATA ? "FDC write c="
+			  : "FDC read c=");
   bios_serial_debug_put_hex8 ((u8) cylinder);
   bios_serial_debug_puts (" h=");
   bios_serial_debug_put_hex8 (head);
@@ -496,28 +712,31 @@ bios_floppy_read (bios_regs_t __far *regs)
   bios_serial_debug_put_hex8 (sector);
   bios_serial_debug_puts ("\n");
 
-  if (!bios_floppy_output_byte (FDC_CMD_READ_DATA)
+  if (!bios_floppy_output_byte (fdc_command)
       || !bios_floppy_output_byte ((u8) ((head << 2) | drive))
       || !bios_floppy_output_byte ((u8) cylinder)
       || !bios_floppy_output_byte (head)
       || !bios_floppy_output_byte (sector)
-      || !bios_floppy_output_byte (bios_diskette_parameter_table[3])
-      || !bios_floppy_output_byte (bios_diskette_parameter_table[4])
-      || !bios_floppy_output_byte (bios_diskette_parameter_table[5])
-      || !bios_floppy_output_byte (bios_diskette_parameter_table[6]))
+      || !bios_floppy_output_byte (geom.parameter_table[3])
+      || !bios_floppy_output_byte (geom.parameter_table[4])
+      || !bios_floppy_output_byte (geom.parameter_table[5])
+      || !bios_floppy_output_byte (geom.parameter_table[6]))
     {
       bios_floppy_complete (regs, FLOPPY_ST_TIMEOUT, 0);
       return;
     }
 
-  if (!bios_floppy_wait_irq (96))
+  bios_hw_enable_interrupts ();
+  if (!bios_floppy_wait_irq (1024))
     {
-      bios_serial_debug_puts ("FDC read timeout\n");
+      bios_serial_debug_puts (fdc_command == FDC_CMD_WRITE_DATA
+			      ? "FDC write timeout\n" : "FDC read timeout\n");
       bios_floppy_complete (regs, FLOPPY_ST_TIMEOUT, 0);
       return;
     }
 
-  if (!bios_floppy_collect_result (result, &result_count) || result_count != 7)
+  if (!bios_floppy_collect_result (result, &result_count)
+      || result_count != 7)
     {
       bios_floppy_complete (regs, FLOPPY_ST_CONTROLLER, 0);
       return;
@@ -528,14 +747,27 @@ bios_floppy_read (bios_regs_t __far *regs)
 }
 
 static void
+bios_floppy_read (bios_regs_t __far *regs)
+{
+  bios_floppy_transfer (regs, DMA_MODE_READ, FDC_CMD_READ_DATA);
+}
+
+static void
+bios_floppy_write (bios_regs_t __far *regs)
+{
+  bios_floppy_transfer (regs, DMA_MODE_WRITE, FDC_CMD_WRITE_DATA);
+}
+
+static void
 bios_floppy_verify (bios_regs_t __far *regs)
 {
+  bios_floppy_drive_geometry_t geom;
   u8 drive;
   u8 head;
   u8 status;
   u16 cylinder;
 
-  if (!bios_floppy_validate_transfer (regs, &status, 0))
+  if (!bios_floppy_validate_transfer (regs, &status, 0, &geom))
     {
       bios_floppy_complete (regs, status, 0);
       return;
@@ -545,20 +777,20 @@ bios_floppy_verify (bios_regs_t __far *regs)
   head = bios_hi (regs->dx);
   cylinder = bios_floppy_cylinder (regs);
 
-  bios_floppy_select_drive (drive);
-  bios_io_write (PORT_FDC_CCR, BIOS_CFG_FLOPPY_RATE);
-  if (!bios_floppy_issue_specify ())
+  bios_floppy_select_drive (drive, geom.parameter_table);
+  bios_io_write (PORT_FDC_CCR, geom.data_rate);
+  if (!bios_floppy_issue_specify (geom.parameter_table))
     {
       bios_floppy_complete (regs, FLOPPY_ST_TIMEOUT, 0);
       return;
     }
   if (bios_floppy_current_cylinder (drive) == 0xFF
-      && !bios_floppy_recalibrate (drive))
+      && !bios_floppy_recalibrate (drive, geom.parameter_table))
     {
       bios_floppy_complete (regs, FLOPPY_ST_RESET_FAILED, 0);
       return;
     }
-  if (!bios_floppy_seek (drive, head, (u8) cylinder))
+  if (!bios_floppy_seek (drive, head, (u8) cylinder, geom.parameter_table))
     {
       bios_floppy_complete (regs, FLOPPY_ST_SEEK_FAILED, 0);
       return;
@@ -567,11 +799,162 @@ bios_floppy_verify (bios_regs_t __far *regs)
   bios_floppy_complete (regs, FLOPPY_ST_OK, bios_lo (regs->ax));
 }
 
+static void
+bios_floppy_format_track (bios_regs_t __far *regs)
+{
+  bios_floppy_drive_geometry_t geom;
+  u32 dma_addr;
+  u16 dma_count;
+  u16 dma_offset;
+  u8 drive;
+  u8 head;
+  u8 result[7];
+  u8 result_count;
+  u8 sectors_per_track;
+  u8 status;
+  u16 cylinder;
+
+  drive = bios_lo (regs->dx);
+  head = bios_hi (regs->dx);
+  cylinder = bios_floppy_cylinder (regs);
+
+  if (!bios_floppy_geometry (drive, &geom))
+    {
+      bios_floppy_complete (regs, FLOPPY_ST_BAD_COMMAND, 0);
+      return;
+    }
+
+  sectors_per_track = geom.parameter_table[4];
+
+  if (head >= geom.heads || cylinder >= geom.tracks)
+    {
+      bios_floppy_complete (regs, FLOPPY_ST_SECTOR_NOT_FOUND, 0);
+      return;
+    }
+
+  dma_addr = ((u32) regs->es << 4) + regs->bx;
+  dma_offset = (u16) dma_addr;
+  if ((u16) (dma_offset + (u16) sectors_per_track * 4U - 1U) < dma_offset)
+    {
+      bios_floppy_complete (regs, FLOPPY_ST_DMA_BOUNDARY, 0);
+      return;
+    }
+
+  bios_floppy_select_drive (drive, geom.parameter_table);
+  bios_io_write (PORT_FDC_CCR, geom.data_rate);
+
+  if (!bios_floppy_issue_specify (geom.parameter_table))
+    {
+      bios_floppy_complete (regs, FLOPPY_ST_TIMEOUT, 0);
+      return;
+    }
+
+  if (bios_floppy_current_cylinder (drive) == 0xFF
+      && !bios_floppy_recalibrate (drive, geom.parameter_table))
+    {
+      bios_floppy_complete (regs, FLOPPY_ST_RESET_FAILED, 0);
+      return;
+    }
+
+  if (!bios_floppy_seek (drive, head, (u8) cylinder, geom.parameter_table))
+    {
+      bios_floppy_set_current_cylinder (drive, 0xFF);
+      if (!bios_floppy_recalibrate (drive, geom.parameter_table)
+		  || !bios_floppy_seek (drive, head, (u8) cylinder,
+					geom.parameter_table))
+		{
+		  bios_floppy_complete (regs, FLOPPY_ST_SEEK_FAILED, 0);
+		  return;
+	}
+    }
+
+  dma_count = (u16) sectors_per_track *4U;
+  bios_hw_disable_interrupts ();
+  bios_hw_out8 ((u8) (DMA_CH2 | 0x04), PORT_DMA1_MASK);
+  bios_hw_out8 ((u8) (DMA_CH2 | 0x04), PORT_DMA1_CLEAR_FF);
+  bios_hw_out8 ((u8) (dma_addr & 0xFF), PORT_DMA_CH2_ADDR);
+  bios_hw_out8 ((u8) ((dma_addr >> 8) & 0xFF), PORT_DMA_CH2_ADDR);
+  bios_hw_out8 ((u8) ((dma_addr >> 16) & 0xFF), PORT_DMA_PAGE_CH2);
+  dma_count--;
+  bios_hw_out8 ((u8) (dma_count & 0xFF), PORT_DMA_CH2_COUNT);
+  bios_hw_out8 ((u8) ((dma_count >> 8) & 0xFF), PORT_DMA_CH2_COUNT);
+  bios_hw_enable_interrupts ();
+  bios_hw_out8 ((u8) (DMA_CH2 | DMA_MODE_WRITE), PORT_DMA1_MODE);
+  bios_hw_out8 (DMA_CH2, PORT_DMA1_MASK);
+  bios_floppy_reset_irq ();
+
+  bios_serial_debug_puts ("FDC format c=");
+  bios_serial_debug_put_hex8 ((u8) cylinder);
+  bios_serial_debug_puts (" h=");
+  bios_serial_debug_put_hex8 (head);
+  bios_serial_debug_puts ("\n");
+
+  if (!bios_floppy_output_byte (FDC_CMD_FORMAT_TRACK)
+      || !bios_floppy_output_byte ((u8) ((head << 2) | drive))
+      || !bios_floppy_output_byte (geom.parameter_table[3])
+      || !bios_floppy_output_byte (sectors_per_track)
+      || !bios_floppy_output_byte (geom.parameter_table[7])
+      || !bios_floppy_output_byte (geom.parameter_table[8]))
+    {
+      bios_floppy_complete (regs, FLOPPY_ST_TIMEOUT, 0);
+      return;
+    }
+
+  bios_hw_enable_interrupts ();
+  if (!bios_floppy_wait_irq (1024))
+    {
+      bios_serial_debug_puts ("FDC format timeout\n");
+      bios_floppy_complete (regs, FLOPPY_ST_TIMEOUT, 0);
+      return;
+    }
+
+  if (!bios_floppy_collect_result (result, &result_count)
+      || result_count != 7)
+    {
+      bios_floppy_complete (regs, FLOPPY_ST_CONTROLLER, 0);
+      return;
+    }
+
+  status = bios_floppy_status_from_result (result);
+  bios_floppy_complete (regs, status, 0);
+}
+
 void
 bios_floppy_init (void)
 {
+  if (!BIOS_CFG_HAS_FLOPPY_CONTROLLER)
+    {
+      bios_bda_write8 (BDA_FLOPPY_STATUS, FLOPPY_ST_TIMEOUT);
+      return;
+    }
+
   if (!bios_floppy_reset_controller ())
     bios_bda_write8 (BDA_FLOPPY_STATUS, FLOPPY_ST_RESET_FAILED);
+}
+
+int
+bios_floppy_post_test (void)
+{
+  bios_floppy_drive_geometry_t geom;
+  u8 drive;
+
+  if (!BIOS_CFG_HAS_FLOPPY_CONTROLLER)
+    return 1;
+
+  if (!bios_floppy_reset_controller ())
+    return 0;
+
+  for (drive = 0; drive != BIOS_CFG_FLOPPY_DRIVES; ++drive)
+    {
+      if (!bios_floppy_geometry (drive, &geom))
+	return 0;
+      if (!bios_floppy_recalibrate (drive, geom.parameter_table))
+	return 0;
+      if (!bios_floppy_seek (drive, 0, 10, geom.parameter_table))
+	return 0;
+    }
+
+  return 1;
 }
 
 void
@@ -588,35 +971,63 @@ bios_service_int13 (bios_regs_t __far *regs)
 {
   u8 status;
 
+  if (bios_lo (regs->dx) >= 0x80)
+    {
+      bios_ide_service_int13 (regs);
+      return;
+    }
+
+  if (!BIOS_CFG_HAS_FLOPPY_CONTROLLER)
+    {
+      bios_floppy_complete (regs, FLOPPY_ST_TIMEOUT, 0);
+      return;
+    }
+
   switch (bios_hi (regs->ax))
     {
     case 0x00:
+      bios_hw_enable_interrupts ();
       if (bios_floppy_reset_controller ())
-        bios_floppy_complete (regs, FLOPPY_ST_OK, 0);
+	bios_floppy_complete (regs, FLOPPY_ST_OK, 0);
       else
-        bios_floppy_complete (regs, FLOPPY_ST_RESET_FAILED, 0);
+	bios_floppy_complete (regs, FLOPPY_ST_RESET_FAILED, 0);
       break;
 
     case 0x01:
       bios_set_hi (&regs->ax, bios_bda_read8 (BDA_FLOPPY_STATUS));
-      bios_clear_cf (regs);
+      if (bios_bda_read8 (BDA_FLOPPY_STATUS) == FLOPPY_ST_OK)
+	bios_clear_cf (regs);
+      else
+	bios_set_cf (regs);
       break;
 
     case 0x02:
+      bios_hw_enable_interrupts ();
       bios_floppy_read (regs);
       break;
 
+    case 0x03:
+      bios_hw_enable_interrupts ();
+      bios_floppy_write (regs);
+      break;
+
     case 0x04:
+      bios_hw_enable_interrupts ();
       bios_floppy_verify (regs);
+      break;
+
+    case 0x05:
+      bios_hw_enable_interrupts ();
+      bios_floppy_format_track (regs);
       break;
 
 #if BIOS_CFG_FLOPPY_ENABLE_AH08_COMPAT
     case 0x08:
       if (!bios_floppy_drive_valid (bios_lo (regs->dx)))
-        {
-          bios_floppy_complete (regs, FLOPPY_ST_BAD_COMMAND, 0);
-          break;
-        }
+	{
+	  bios_floppy_complete (regs, FLOPPY_ST_BAD_COMMAND, 0);
+	  break;
+	}
 
       bios_floppy_get_parameters (regs);
       break;
@@ -634,52 +1045,70 @@ bios_bootstrap_loader (void)
 {
   bios_regs_t regs;
   u8 attempt;
+  u16 last_track_cx;
 
   bios_serial_debug_puts ("INT19 start\n");
+  BIOS_INSTALL_DATA_VECTOR (0x1E, bios_diskette_parameter_table);
+  last_track_cx = bios_floppy_last_track_cx (0);
+
   for (attempt = 0; attempt != 10; ++attempt)
     {
       bios_serial_debug_puts ("INT19 try ");
       bios_serial_debug_put_hex8 (attempt);
       bios_serial_debug_puts ("\n");
 
-      regs.ax = 0x0000;
-      regs.bx = 0x0000;
-      regs.cx = 0x0000;
-      regs.dx = 0x0000;
-      regs.si = 0x0000;
-      regs.di = 0x0000;
-      regs.bp = 0x0000;
-      regs.ds = 0x0000;
-      regs.es = 0x0000;
-      regs.flags = 0x0000;
-      bios_service_int13 (&regs);
+      bios_boot_setup_regs (&regs, 0x0000, 0x0000, 0x0000, 0x0000);
+      bios_boot_int13_call (&regs);
 
-      regs.ax = 0x0201;
-      regs.bx = 0x7C00;
-      regs.cx = 0x0001;
-      regs.dx = 0x0000;
-      regs.si = 0x0000;
-      regs.di = 0x0000;
-      regs.bp = 0x0000;
-      regs.ds = 0x0000;
-      regs.es = 0x0000;
-      regs.flags = 0x0000;
-      bios_service_int13 (&regs);
-      if ((regs.flags & BIOS_FLAG_CF) == 0
-          && bios_abs_read16 (0x0000, 0x7DFE) == 0xAA55)
-        {
-          bios_serial_debug_puts ("INT19 boot sector ok\n");
-          bios_hw_boot_sector (0);
-        }
+      bios_boot_setup_regs (&regs, 0x0201, 0x7C00, 0x0001, 0x0000);
+      bios_boot_int13_call (&regs);
+      if ((regs.flags & BIOS_FLAG_CF) == 0 && bios_boot_sector_ready ())
+	{
+	  bios_serial_debug_puts ("INT19 boot sector ok\n");
+	  bios_keyboard_clear_buffer ();
+	  bios_hw_boot_sector (0);
+	}
 
-      if ((bios_hi (regs.ax) & FLOPPY_ST_TIMEOUT) != 0)
-        break;
+      if ((bios_hi (regs.ax) & 0x80) != 0)
+	break;
+
+      if ((attempt & 0x01) != 0)
+	{
+	  bios_boot_setup_regs (&regs, 0x0401, 0x0000, last_track_cx, 0x0000);
+	  bios_boot_int13_call (&regs);
+	}
     }
 
+  if (BIOS_CFG_XTIDE_BOOT_ENABLED && bios_fixed_disk_present ())
+    {
+      for (attempt = 0; attempt != 2; ++attempt)
+	{
+	  bios_serial_debug_puts ("INT19 try C:");
+	  bios_serial_debug_put_hex8 (attempt);
+	  bios_serial_debug_puts ("\n");
+
+	  bios_boot_setup_regs (&regs, 0x0000, 0x0000, 0x0000, 0x0080);
+	  bios_boot_int13_call (&regs);
+
+	  bios_boot_setup_regs (&regs, 0x0201, 0x7C00, 0x0001, 0x0080);
+	  bios_boot_int13_call (&regs);
+	  if ((regs.flags & BIOS_FLAG_CF) == 0 && bios_boot_sector_ready ())
+	    {
+	      bios_serial_debug_puts ("INT19 C boot sector ok\n");
+	      bios_keyboard_clear_buffer ();
+	      bios_hw_boot_sector (0x80);
+	    }
+
+	  if ((regs.flags & BIOS_FLAG_CF) == 0)
+	    break;
+	}
+    }
+
+
+
   bios_serial_debug_puts ("INT19 failed\n");
-  bios_video_puts (bios_str_en_insert_system_disk);
-  bios_video_puts ("\r\n");
-  bios_keyboard_wait_for_keypress ();
-  bios_work_write8 (WK_BOOT_FLAGS,
-                    (u8) (bios_work_read8 (WK_BOOT_FLAGS) | BOOT_FLAG_BOOT_FAILED));
+
+  /* No bootable media found — halt the system. */
+  for (;;)
+    bios_hw_halt ();
 }

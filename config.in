@@ -1,0 +1,148 @@
+#
+# FreeRos PC1640 Compatible BIOS Configuration
+#
+
+mainmenu_name "FreeRos BIOS Configuration"
+
+mainmenu_option next_comment
+	comment 'Machine Identity'
+
+	string 'Machine name' CONFIG_MACHINE_NAME 'FreeRos PC1640 Compatible BIOS'
+	string 'BIOS brand' CONFIG_BIOS_BRAND 'FreeRos'
+	string 'BIOS style name' CONFIG_BIOS_STYLE_NAME 'PC1640-Compatible System BIOS'
+	string 'Website' CONFIG_WEBSITE 'www.xt-emporium.com'
+	int 'ROS release number' CONFIG_ROS_RELEASE 0 0 255
+	int 'ROS issue number' CONFIG_ROS_ISSUE 2 0 255
+
+endmenu
+
+mainmenu_option next_comment
+	comment 'Hardware'
+
+	int 'Base memory (KB)' CONFIG_BASE_MEMORY_KB 608 256 640
+	bool 'Paradise PEGA1A video' CONFIG_HAS_PARADISE_PEGA1A y
+	bool 'Amstrad mouse port' CONFIG_HAS_AMSTRAD_MOUSE y
+	bool 'Battery-backed RTC' CONFIG_HAS_BATTERY_BACKED_RTC y
+	bool 'Math coprocessor (8087)' CONFIG_HAS_MATH_COPROCESSOR n
+
+endmenu
+
+mainmenu_option next_comment
+	comment 'Peripheral Ports'
+
+	hex 'COM1 base I/O address' CONFIG_COM1_BASE 03F8
+	hex 'COM2 base I/O address' CONFIG_COM2_BASE 02F8
+	hex 'LPT1 base I/O address' CONFIG_LPT1_BASE 0378
+	hex 'LPT2 base I/O address' CONFIG_LPT2_BASE 03BC
+
+endmenu
+
+mainmenu_option next_comment
+	comment 'Video'
+
+	choice 'Fallback video equipment' \
+		"EGA_adapter       CONFIG_VIDEO_EGA_ADAPTER \
+		 40x25_color       CONFIG_VIDEO_40X25_COLOR \
+		 80x25_color       CONFIG_VIDEO_80X25_COLOR \
+		 Monochrome        CONFIG_VIDEO_MONO" 80x25_color
+
+	hex 'Default text attribute' CONFIG_VIDEO_ATTRIBUTE 07
+	bool 'Direct text init before PEGA ROM' CONFIG_VIDEO_DIRECT_TEXT_INIT y
+	bool 'Use PC1640 switch block' CONFIG_VIDEO_USE_PC1640_SWITCH_BLOCK y
+	bool 'Query video ROM state' CONFIG_VIDEO_QUERY_ROM_STATE y
+	bool 'Fix up video state from switch block' CONFIG_VIDEO_FIXUP_FROM_SWITCH_BLOCK y
+
+endmenu
+
+mainmenu_option next_comment
+	comment 'Option ROMs'
+
+	bool 'Scan video option ROMs' CONFIG_VIDEO_OPTION_ROM_SCAN_ENABLED y
+	bool 'Scan non-video option ROMs' CONFIG_OPTION_ROM_SCAN_ENABLED y
+
+endmenu
+
+mainmenu_option next_comment
+	comment 'Floppy Disk Controller'
+
+	bool 'Onboard floppy controller' CONFIG_HAS_FLOPPY_CONTROLLER y
+	bool 'Enable 720K 3.5" DD support' CONFIG_FLOPPY_SUPPORT_35DD y
+
+	if [ "$CONFIG_HAS_FLOPPY_CONTROLLER" = "y" ]; then
+
+		if [ "$CONFIG_FLOPPY_SUPPORT_35DD" = "y" ]; then
+			choice 'Drive A type' \
+				"Not_installed   CONFIG_FLOPPY_A_NONE \
+				 360K_5.25DD    CONFIG_FLOPPY_A_360K \
+				 720K_3.5DD     CONFIG_FLOPPY_A_720K" 360K_5.25DD
+
+			choice 'Drive B type' \
+				"Not_installed   CONFIG_FLOPPY_B_NONE \
+				 360K_5.25DD    CONFIG_FLOPPY_B_360K \
+				 720K_3.5DD     CONFIG_FLOPPY_B_720K" Not_installed
+		else
+			choice 'Drive A type' \
+				"Not_installed   CONFIG_FLOPPY_A_NONE \
+				 360K_5.25DD    CONFIG_FLOPPY_A_360K" 360K_5.25DD
+
+			choice 'Drive B type' \
+				"Not_installed   CONFIG_FLOPPY_B_NONE \
+				 360K_5.25DD    CONFIG_FLOPPY_B_360K" Not_installed
+		fi
+	fi
+
+	bool 'INT 13h AH=08 compatibility path' CONFIG_FLOPPY_ENABLE_AH08_COMPAT y
+
+endmenu
+
+mainmenu_option next_comment
+	comment 'IDE Hard Disk (XTIDE)'
+
+	bool 'Built-in XTIDE-compatible IDE support' CONFIG_XTIDE_ENABLED y
+	if [ "$CONFIG_XTIDE_ENABLED" = "y" ]; then
+		hex 'XTIDE base I/O address' CONFIG_XTIDE_BASE 0300
+		bool 'Try XTIDE boot in INT 19h' CONFIG_XTIDE_BOOT_ENABLED y
+		bool 'Probe master device' CONFIG_XTIDE_PROBE_MASTER y
+		bool 'Probe slave device' CONFIG_XTIDE_PROBE_SLAVE n
+		bool 'Prefer LBA28 translation' CONFIG_XTIDE_PREFER_LBA y
+		int 'Reported translated heads' CONFIG_XTIDE_TRANSLATED_HEADS 255 1 255
+		int 'Reported translated sectors/track' CONFIG_XTIDE_TRANSLATED_SECTORS 63 1 63
+		int 'IDE poll loop count' CONFIG_XTIDE_POLL_LOOPS 16384 256 65535
+		bool 'INT 13h extensions (EDD)' CONFIG_XTIDE_EDD_ENABLED y
+		int 'EDD max sectors per request' CONFIG_XTIDE_EDD_MAX_BLOCKS 127 1 127
+	fi
+
+endmenu
+
+mainmenu_option next_comment
+	comment 'Real Time Clock Defaults'
+
+	hex 'UART init byte' CONFIG_UART_INIT E3
+	int 'Default RTC seconds' CONFIG_RTC_DEFAULT_SECONDS 0 0 59
+	int 'Default RTC minutes' CONFIG_RTC_DEFAULT_MINUTES 0 0 59
+	int 'Default RTC hours' CONFIG_RTC_DEFAULT_HOURS 0 0 23
+	int 'Default RTC day of month' CONFIG_RTC_DEFAULT_DAY_OF_MONTH 1 1 31
+	int 'Default RTC month' CONFIG_RTC_DEFAULT_MONTH 1 1 12
+	int 'Default RTC year (2-digit)' CONFIG_RTC_DEFAULT_YEAR 88 0 99
+	int 'Default RTC century' CONFIG_RTC_DEFAULT_CENTURY 19 0 99
+
+endmenu
+
+mainmenu_option next_comment
+	comment 'POST Options'
+
+	bool 'Pretty wait panel' CONFIG_POST_PRETTY_WAIT_PANEL y
+	bool 'Space Invaders speaker effect' CONFIG_POST_SPACE_INVADERS_SOUND n
+
+endmenu
+
+mainmenu_option next_comment
+	comment 'Debug'
+
+	bool 'Route debug output to port E9' CONFIG_DEBUG_PORT_E9 n
+	bool 'Route debug output to COM1' CONFIG_DEBUG_COM1 n
+	bool 'Trace video state changes' CONFIG_DEBUG_VIDEO_STATE n
+	bool 'Enable video overlay debug' CONFIG_DEBUG_VIDEO_OVERLAY n
+	bool 'Mirror video trace to COM1' CONFIG_TRACE_VIDEO_COM1 n
+
+endmenu

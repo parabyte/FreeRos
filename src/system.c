@@ -7,58 +7,52 @@
 #define BIOS_EQUIP_SERIAL_SHIFT 9
 #define BIOS_EQUIP_PRINTER_SHIFT 14
 
-#define BIOS_EQUIP_VIDEO_EGA_VGA 0x0000
+#define BIOS_EQUIP_VIDEO_EGA_ADAPTER 0x0000
 #define BIOS_EQUIP_VIDEO_40X25_COLOR 0x0001
 #define BIOS_EQUIP_VIDEO_80X25_COLOR 0x0002
 #define BIOS_EQUIP_VIDEO_MONO 0x0003
 
-#define BIOS_INT15_WAIT_US_PER_TICK 54925UL
 #define BIOS_INT15_UNSUPPORTED 0x86
 
 static u16 bios_equipment_video_bits (void);
 
-static const u8 bios_pc1640_pega_switch_table[16] = {
-  0xD0, 0xE0, 0xE0, 0xE0,
-  0x71, 0xB1, 0x70, 0xB0,
-  0xB0, 0xB0, 0xD1, 0xE1,
-  0x00, 0x00, 0x10, 0x10
-};
+static u8
+bios_pc1640_switch_latch_read (u16 latch_port)
+{
+  u8 control;
+
+  if (!BIOS_CFG_VIDEO_USE_PC1640_SWITCH_BLOCK)
+    return 0;
+
+  bios_hw_disable_interrupts ();
+  (void) bios_hw_in8 (latch_port);
+  control = bios_hw_in8 (PORT_LPT1_CONTROL);
+  bios_hw_enable_interrupts ();
+  return control;
+}
 
 static u8
 bios_pc1640_switch_status_read (void)
 {
-  if (!BIOS_CFG_VIDEO_USE_PC1640_SWITCH_BLOCK)
-    return 0;
-
-  (void) bios_hw_in8 (PORT_PC1640_SWITCH_LATCH);
-  return bios_hw_in8 (PORT_LPT1_CONTROL);
+  return bios_pc1640_switch_latch_read (PORT_PC1640_SW10_LATCH);
 }
 
-static u8
-bios_pc1640_pega_switch_code_read (void)
+static void
+bios_boot_failure_wait_key (void)
 {
-  static const u8 probe_values[4] = { 0x0D, 0x09, 0x05, 0x01 };
-  u8 code;
-  u8 bit;
-  u8 i;
+  bios_regs_t regs;
 
-  code = 0;
-  bit = 1;
-  for (i = 0; i != 4; ++i)
-    {
-      bios_hw_out8 (probe_values[i], 0x03C2);
-      if ((bios_hw_in8 (0x03C2) & 0x10) != 0)
-        code |= bit;
-      bit <<= 1;
-    }
-
-  return code;
-}
-
-static u8
-bios_pc1640_pega_switch_entry (void)
-{
-  return bios_pc1640_pega_switch_table[bios_pc1640_pega_switch_code_read () & 0x0F];
+  regs.ax = 0x0000;
+  regs.bx = 0x0000;
+  regs.cx = 0x0000;
+  regs.dx = 0x0000;
+  regs.si = 0x0000;
+  regs.di = 0x0000;
+  regs.bp = 0x0000;
+  regs.ds = 0x0000;
+  regs.es = 0x0000;
+  regs.flags = 0x0000;
+  bios_service_int16 (&regs);
 }
 
 static u16
@@ -73,28 +67,18 @@ bios_equipment_video_bits_from_switch_block (void)
 
   if ((control & LPT1_CONTROL_SWITCH_SW10) == 0)
     {
-      if (BIOS_CFG_HAS_PARADISE_PEGA1A)
-        {
-          switch (bios_pc1640_pega_switch_entry () & 0x30)
-            {
-            case 0x10:
-              return BIOS_EQUIP_VIDEO_40X25_COLOR;
-
-            case 0x30:
-              return BIOS_EQUIP_VIDEO_MONO;
-
-            case 0x00:
-            case 0x20:
-            default:
-              return BIOS_EQUIP_VIDEO_80X25_COLOR;
-            }
-        }
-
-      return BIOS_CFG_VIDEO_EQUIPMENT;
+      /*
+       * Let the Paradise ROM own video-mode setup.  Using the PEGA probe
+       * sequence here writes MISC output values before the option ROM has
+       * initialized the adapter, which can leave bring-up stuck in 86Box.
+       * Report the stock PC1640 colour text profile until the PEGA ROM
+       * publishes the real active mode in the BDA.
+       */
+      return BIOS_EQUIP_VIDEO_80X25_COLOR;
     }
 
   if ((control & (LPT1_CONTROL_SWITCH_SW7 | LPT1_CONTROL_SWITCH_SW6)) == 0)
-    return BIOS_EQUIP_VIDEO_EGA_VGA;
+    return BIOS_EQUIP_VIDEO_EGA_ADAPTER;
 
   if ((control & (LPT1_CONTROL_SWITCH_SW7 | LPT1_CONTROL_SWITCH_SW6))
       == LPT1_CONTROL_SWITCH_SW6)
@@ -124,7 +108,7 @@ bios_default_display_mode_bits (void)
     case BIOS_EQUIP_VIDEO_MONO:
       return 0x30;
 
-    case BIOS_EQUIP_VIDEO_EGA_VGA:
+    case BIOS_EQUIP_VIDEO_EGA_ADAPTER:
     default:
       return 0x00;
     }
@@ -133,6 +117,11 @@ bios_default_display_mode_bits (void)
 u8
 bios_default_text_mode (void)
 {
+  if (BIOS_CFG_HAS_PARADISE_PEGA1A
+      && BIOS_CFG_VIDEO_USE_PC1640_SWITCH_BLOCK
+      && (bios_pc1640_switch_status_read () & LPT1_CONTROL_SWITCH_SW10) == 0)
+    return VIDEO_MODE_80X25_COLOR;
+
   switch (bios_default_display_mode_bits ())
     {
     case 0x10:
@@ -146,20 +135,6 @@ bios_default_text_mode (void)
     default:
       return VIDEO_MODE_80X25_COLOR;
     }
-}
-
-u8
-bios_default_pc1640_video_mode (void)
-{
-  if (BIOS_CFG_HAS_PARADISE_PEGA1A
-      && (bios_pc1640_switch_status_read () & LPT1_CONTROL_SWITCH_SW10) == 0
-      && (bios_pc1640_pega_switch_entry () & 0x01) != 0)
-    return BIOS_CFG_VIDEO_MODE_PC1640_MONO;
-
-  if (bios_default_display_mode_bits () == 0x30)
-    return BIOS_CFG_VIDEO_MODE_PC1640_MONO;
-
-  return BIOS_CFG_VIDEO_MODE_PC1640_COLOR;
 }
 
 u8
@@ -178,21 +153,32 @@ bios_build_status1 (void)
 u8
 bios_build_status2 (void)
 {
+  u16 memory_kb;
+  u8 ram_code;
+
+  memory_kb = bios_bda_read16 (BDA_MEMORY_SIZE_KB);
+  if (memory_kb < 544)
+    ram_code = 0x0E;
+  else if (memory_kb < 576)
+    ram_code = 0x0F;
+  else if (memory_kb < 608)
+    ram_code = 0x10;
+  else if (memory_kb < 640)
+    ram_code = 0x11;
+  else
+    ram_code = 0x12;
+
   /*
-   * RAM4:0 encoding for 640 KiB is 10010b. The hardware exposes either the
-   * high or low nibble depending on PB2, so we keep the packed form here.
+   * WSS2 packs the low nibble (RAM3:0) and the selected high nibble
+   * (undefined, undefined, undefined, RAM4) into one byte. The undefined
+   * upper bits are kept at the stock 100b pattern used by the original ROM.
    */
-  return 0x92;
+  return (u8) (0x80 | ram_code);
 }
 
 u8
 bios_build_video_switches (void)
 {
-  if (BIOS_CFG_HAS_PARADISE_PEGA1A
-      && BIOS_CFG_VIDEO_USE_PC1640_SWITCH_BLOCK
-      && (bios_pc1640_switch_status_read () & LPT1_CONTROL_SWITCH_SW10) == 0)
-    return (u8) (bios_pc1640_pega_switch_code_read () & 0x0F);
-
   return 0x09;
 }
 
@@ -240,15 +226,8 @@ bios_equipment_video_bits (void)
       return BIOS_EQUIP_VIDEO_MONO;
 
     default:
-      return BIOS_EQUIP_VIDEO_EGA_VGA;
+      return BIOS_EQUIP_VIDEO_EGA_ADAPTER;
     }
-}
-
-static void
-bios_int15_complete_success (bios_regs_t __far *regs)
-{
-  bios_set_hi (&regs->ax, 0x00);
-  bios_clear_cf (regs);
 }
 
 static void
@@ -256,28 +235,6 @@ bios_int15_complete_unsupported (bios_regs_t __far *regs)
 {
   bios_set_hi (&regs->ax, BIOS_INT15_UNSUPPORTED);
   bios_set_cf (regs);
-}
-
-static void
-bios_int15_wait (bios_regs_t __far *regs)
-{
-  u32 requested_us;
-  u32 minimum_ticks;
-
-  requested_us = ((u32) regs->cx << 16) | regs->dx;
-  minimum_ticks = requested_us / BIOS_INT15_WAIT_US_PER_TICK;
-  if (requested_us != 0
-      && (requested_us % BIOS_INT15_WAIT_US_PER_TICK) != 0)
-    minimum_ticks++;
-
-  /*
-   * The current clean-room BIOS still uses a C port shadow model rather than
-   * hardware timer programming, so this service can only provide a logical
-   * compatibility surface. Returning success keeps DOS installers and option
-   * ROM probes moving without hanging on an unimplemented PIT backend.
-   */
-  (void) minimum_ticks;
-  bios_int15_complete_success (regs);
 }
 
 u16
@@ -288,20 +245,25 @@ bios_build_equipment_word (void)
   u16 serial_ports;
   u16 parallel_ports;
 
-  equipment = 0x0000;
+  /*
+   * PC1640 always reports bits 2-3 set (motherboard RAM banks = 4,
+   * i.e., at least 64 KiB on-board), matching the original ROS.
+   */
+  equipment = 0x000C;
 
   if (BIOS_CFG_FLOPPY_DRIVES != 0)
     {
       floppy_drives = (u16) (BIOS_CFG_FLOPPY_DRIVES - 1);
       equipment |= BIOS_EQUIP_BOOT_FLOPPY;
-      equipment |= (u16) ((floppy_drives & 0x0003U) << BIOS_EQUIP_FLOPPY_SHIFT);
+      equipment |=
+	(u16) ((floppy_drives & 0x0003U) << BIOS_EQUIP_FLOPPY_SHIFT);
     }
 
   if (BIOS_CFG_HAS_MATH_COPROCESSOR)
     equipment |= BIOS_EQUIP_MATH_COPROCESSOR;
 
   equipment |= (u16) ((bios_equipment_video_bits () & 0x0003U)
-                      << BIOS_EQUIP_VIDEO_SHIFT);
+		      << BIOS_EQUIP_VIDEO_SHIFT);
 
   serial_ports = bios_count_serial_ports ();
   parallel_ports = bios_count_parallel_ports ();
@@ -328,13 +290,14 @@ bios_service_int15 (bios_regs_t __far *regs)
 {
   switch (bios_hi (regs->ax))
     {
-    case 0x86:
-      bios_int15_wait (regs);
-      break;
-
-    case 0x88:
-      regs->ax = BIOS_CFG_EXTENDED_MEMORY_KB;
-      bios_clear_cf (regs);
+    case 0x00:
+    case 0x01:
+    case 0x02:
+    case 0x03:
+    case 0x04:
+    case 0x05:
+    case 0x06:
+      bios_service_pc1640_int15 (regs);
       break;
 
     default:
@@ -347,10 +310,17 @@ void
 bios_boot_failure (void)
 {
   bios_work_write8 (WK_BOOT_FLAGS,
-                    (u8) (bios_work_read8 (WK_BOOT_FLAGS) | BOOT_FLAG_BOOT_FAILED));
+		    (u8) (bios_work_read8 (WK_BOOT_FLAGS) |
+			  BOOT_FLAG_BOOT_FAILED));
 
+  bios_video_set_attribute (0x07);
   for (;;)
-    bios_bootstrap_loader ();
+    {
+      bios_video_puts (bios_str_en_insert_system_disk);
+      bios_video_puts ("\r\n");
+      bios_boot_failure_wait_key ();
+      bios_invoke_int19 ();
+    }
 }
 
 void

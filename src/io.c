@@ -25,26 +25,43 @@ bios_io_lpt1_status_live (void)
   u8 value;
 
   value = (u8) ((bios_hw_in8 (PORT_LPT1_STATUS) & 0xF8)
-                | (BIOS_CFG_LANGUAGE & LPT1_STATUS_LANGUAGE_MASK));
+		| (BIOS_CFG_LANGUAGE & LPT1_STATUS_LANGUAGE_MASK));
   if (!BIOS_CFG_VIDEO_USE_PC1640_SWITCH_BLOCK)
     value = BIOS_CFG_LPT1_STATUS;
 
   bios_work_write8 (WK_LPT1_STATUS, value);
-  bios_work_write8 (WK_LANGUAGE,
-                    (u8) (value & LPT1_STATUS_LANGUAGE_MASK));
+  bios_work_write8 (WK_LANGUAGE, (u8) (value & LPT1_STATUS_LANGUAGE_MASK));
   return value;
 }
 
 u8
 bios_cmos_read (u8 index)
 {
-  return bios_work_read8 ((u16) (WK_CMOS_SHADOW + (index & 0x3F)));
+  u8 value;
+
+  index &= 0x3F;
+  bios_work_write8 (WK_CMOS_INDEX, index);
+
+  bios_hw_disable_interrupts ();
+  bios_hw_out8 (index, PORT_CMOS_ADDR);
+  value = bios_hw_in8 (PORT_CMOS_DATA);
+  bios_hw_enable_interrupts ();
+
+  bios_work_write8 ((u16) (WK_CMOS_SHADOW + index), value);
+  return value;
 }
 
 void
 bios_cmos_write (u8 index, u8 value)
 {
-  bios_work_write8 ((u16) (WK_CMOS_SHADOW + (index & 0x3F)), value);
+  index &= 0x3F;
+  bios_work_write8 (WK_CMOS_INDEX, index);
+  bios_work_write8 ((u16) (WK_CMOS_SHADOW + index), value);
+
+  bios_hw_disable_interrupts ();
+  bios_hw_out8 (index, PORT_CMOS_ADDR);
+  bios_hw_out8 (value, PORT_CMOS_DATA);
+  bios_hw_enable_interrupts ();
 }
 
 void
@@ -57,13 +74,14 @@ bios_io_init_defaults (void)
   bios_work_write8 (WK_PORT62, 0x20);
   bios_work_write8 (WK_PORT64, bios_build_status1 ());
   bios_work_write8 (WK_PORT65, bios_build_status2 ());
-  bios_work_write16 (WK_MOUSE_X, 0);
-  bios_work_write16 (WK_MOUSE_Y, 0);
+  bios_hw_out8 (bios_work_read8 (WK_PORT64), PORT_SYSSTAT1_WR);
+  bios_hw_out8 (bios_work_read8 (WK_PORT65), PORT_SYSSTAT2_WR);
   bios_work_write8 (WK_FDC_STATUS, 0x00);
   bios_work_write8 (WK_SERIAL_STATUS, 0x60);
   bios_work_write8 (WK_PRINTER_STATUS, 0x90);
   bios_work_write8 (WK_LAST_KBD_SCANCODE, 0x00);
   bios_work_write8 (WK_LAST_KBD_ASCII, 0x00);
+  bios_work_write8 (WK_LAST_KBD_RAW, 0x00);
   bios_work_write8 (WK_KBD_PREFIX, 0x00);
   bios_work_write8 (WK_KBD_LED_STATE, 0x00);
   bios_work_write8 (WK_VIDEO_ATTRIBUTE, BIOS_CFG_VIDEO_ATTRIBUTE);
@@ -77,7 +95,13 @@ bios_io_init_defaults (void)
   bios_io_lpt1_status_live ();
 
   for (i = 0; i != 64; ++i)
-    bios_cmos_write ((u8) i, bios_cmos_defaults[i]);
+    {
+      if (BIOS_CFG_HAS_BATTERY_BACKED_RTC)
+	bios_work_write8 ((u16) (WK_CMOS_SHADOW + i),
+			  bios_cmos_read ((u8) i));
+      else
+	bios_work_write8 ((u16) (WK_CMOS_SHADOW + i), bios_cmos_defaults[i]);
+    }
 }
 
 u8
@@ -87,27 +111,27 @@ bios_io_read (u16 port)
     {
     case PORT_KBD_DATA:
       if ((bios_work_read8 (WK_PORT61) & PORT61_STATUS_MODE) != 0)
-        return (u8) ((bios_work_read8 (WK_PORT64) | 0x0D) & 0x7F);
+	return (u8) ((bios_work_read8 (WK_PORT64) | 0x0D) & 0x7F);
       return bios_hw_in8 (port);
 
     case PORT_PPI_PORT_B:
       {
-        u8 value;
+	u8 value;
 
-        value = bios_hw_in8 (port);
-        bios_work_write8 (WK_PORT61, value);
-        return value;
+	value = bios_hw_in8 (port);
+	bios_work_write8 (WK_PORT61, value);
+	return value;
       }
 
     case PORT_SYSSTAT2_RD:
       {
-        u8 value;
+	u8 value;
 
-        if ((bios_work_read8 (WK_PORT61) & PORT61_NVR_LOW_NIBBLE) != 0)
-          value = (u8) (bios_work_read8 (WK_PORT65) & 0x0F);
-        else
-          value = (u8) (bios_work_read8 (WK_PORT65) >> 4);
-        return value;
+	if ((bios_work_read8 (WK_PORT61) & PORT61_NVR_LOW_NIBBLE) != 0)
+	  value = (u8) (bios_work_read8 (WK_PORT65) & 0x0F);
+	else
+	  value = (u8) (bios_work_read8 (WK_PORT65) >> 4);
+	return value;
       }
 
     case PORT_CMOS_ADDR:
@@ -118,13 +142,13 @@ bios_io_read (u16 port)
 
     case PORT_MOUSE_X:
       if (!BIOS_CFG_HAS_AMSTRAD_MOUSE)
-        return 0x00;
-      return (u8) bios_work_read16 (WK_MOUSE_X);
+	return 0x00;
+      return bios_hw_in8 (port);
 
     case PORT_MOUSE_Y:
       if (!BIOS_CFG_HAS_AMSTRAD_MOUSE)
-        return 0x00;
-      return (u8) bios_work_read16 (WK_MOUSE_Y);
+	return 0x00;
+      return bios_hw_in8 (port);
 
     case PORT_LPT1_STATUS:
       return bios_io_lpt1_status_live ();
@@ -177,6 +201,7 @@ bios_io_write (u16 port, u8 value)
 
     case PORT_CMOS_ADDR:
       bios_work_write8 (WK_CMOS_INDEX, (u8) (value & 0x3F));
+      bios_hw_out8 ((u8) (value & 0x3F), PORT_CMOS_ADDR);
       break;
 
     case PORT_CMOS_DATA:
@@ -185,12 +210,12 @@ bios_io_write (u16 port, u8 value)
 
     case PORT_MOUSE_X:
       if (BIOS_CFG_HAS_AMSTRAD_MOUSE)
-        bios_work_write16 (WK_MOUSE_X, 0);
+	bios_hw_out8 (value, port);
       break;
 
     case PORT_MOUSE_Y:
       if (BIOS_CFG_HAS_AMSTRAD_MOUSE)
-        bios_work_write16 (WK_MOUSE_Y, 0);
+	bios_hw_out8 (value, port);
       break;
 
     case PORT_FDC_DOR:

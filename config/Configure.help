@@ -1,0 +1,208 @@
+CONFIG_MACHINE_NAME
+  The name shown in BIOS identification strings.
+
+CONFIG_BIOS_BRAND
+  Short brand name shown on the POST banner.
+
+CONFIG_BIOS_STYLE_NAME
+  Style name shown in the POST banner subtitle.
+
+CONFIG_WEBSITE
+  Website URL shown on the POST screen.
+
+CONFIG_ROS_RELEASE
+  ROS firmware release number (0-255).
+
+CONFIG_ROS_ISSUE
+  ROS firmware issue number (0-255).
+
+CONFIG_BASE_MEMORY_KB
+  Amount of conventional base memory in kilobytes.
+  The PC1640 originally shipped with 640 KB, but some boards
+  may have 608 KB (reserving top 32 KB for EMS).
+
+CONFIG_HAS_PARADISE_PEGA1A
+  Enable support for the onboard Paradise PEGA1A EGA controller
+  found in the Amstrad PC1640.
+
+CONFIG_HAS_AMSTRAD_MOUSE
+  Enable support for the Amstrad-specific mouse interface.
+
+CONFIG_HAS_BATTERY_BACKED_RTC
+  Enable battery-backed real time clock support.
+
+CONFIG_HAS_MATH_COPROCESSOR
+  Report that an 8087 math coprocessor is installed.
+
+CONFIG_COM1_BASE
+  I/O base address for COM1 serial port.
+  Standard value: 0x03F8.
+
+CONFIG_COM2_BASE
+  I/O base address for COM2 serial port.
+  Standard value: 0x02F8.
+
+CONFIG_LPT1_BASE
+  I/O base address for LPT1 parallel port.
+  Standard value: 0x0378.
+
+CONFIG_LPT2_BASE
+  I/O base address for LPT2 parallel port.
+  Standard value: 0x03BC.
+
+CONFIG_VIDEO_80X25_COLOR
+  Use 80x25 color text as the default video equipment setting.
+
+CONFIG_VIDEO_40X25_COLOR
+  Use 40x25 color text as the default video equipment setting.
+
+CONFIG_VIDEO_EGA_ADAPTER
+  Use EGA adapter as the default video equipment setting.
+
+CONFIG_VIDEO_MONO
+  Use monochrome as the default video equipment setting.
+
+CONFIG_VIDEO_ATTRIBUTE
+  Default text attribute byte for POST display (hex).
+  0x07 = normal white-on-black.
+
+CONFIG_VIDEO_DIRECT_TEXT_INIT
+  Perform direct text mode initialization before the PEGA option ROM
+  is called. Required for correct display on PC1640 hardware.
+
+CONFIG_VIDEO_USE_PC1640_SWITCH_BLOCK
+  Read the PC1640 switch block to determine display configuration.
+
+CONFIG_VIDEO_QUERY_ROM_STATE
+  Query the video ROM for its current state after initialization.
+
+CONFIG_VIDEO_FIXUP_FROM_SWITCH_BLOCK
+  Apply video state fixups based on the PC1640 switch block settings.
+
+CONFIG_VIDEO_OPTION_ROM_SCAN_ENABLED
+  Scan for and execute video option ROMs in the C000-C7FF range.
+
+CONFIG_OPTION_ROM_SCAN_ENABLED
+  Scan for and execute non-video option ROMs in the C800-EFFF range.
+
+CONFIG_HAS_FLOPPY_CONTROLLER
+  Enable support for the onboard floppy disk controller.
+  Disable this if no floppy controller is present and you want
+  to boot exclusively from IDE.
+
+CONFIG_FLOPPY_SUPPORT_35DD
+  Enable support for 720K 3.5-inch DD floppy drives.
+  If disabled, only 360K 5.25-inch DD drives are supported.
+
+CONFIG_FLOPPY_A_NONE
+  Drive A is not installed.
+
+CONFIG_FLOPPY_A_360K
+  Drive A is a 360K 5.25" DD floppy drive.
+
+CONFIG_FLOPPY_A_720K
+  Drive A is a 720K 3.5" DD floppy drive.
+
+CONFIG_FLOPPY_B_NONE
+  Drive B is not installed.
+
+CONFIG_FLOPPY_B_360K
+  Drive B is a 360K 5.25" DD floppy drive.
+
+CONFIG_FLOPPY_B_720K
+  Drive B is a 720K 3.5" DD floppy drive.
+
+CONFIG_FLOPPY_ENABLE_AH08_COMPAT
+  Enable the INT 13h AH=08h (get drive parameters) compatibility
+  path. Required by some DOS versions.
+
+CONFIG_XTIDE_ENABLED
+  Enable built-in IDE hard disk support compatible with XTIDE ISA
+  adapters. This provides INT 13h services for ATA hard drives
+  connected via an 8-bit ISA IDE controller at the configured
+  I/O base address.
+
+CONFIG_XTIDE_BASE
+  I/O base address for the XTIDE IDE controller.
+  Common values: 0x0300, 0x0320, 0x0340.
+
+CONFIG_XTIDE_BOOT_ENABLED
+  Allow the INT 19h bootstrap loader to attempt booting from
+  the IDE hard drive after floppy boot fails.
+
+CONFIG_XTIDE_PROBE_MASTER
+  Probe for an IDE master device (drive 0) during POST.
+
+CONFIG_XTIDE_PROBE_SLAVE
+  Probe for an IDE slave device (drive 1) during POST.
+
+CONFIG_XTIDE_PREFER_LBA
+  Use LBA28 addressing with translated CHS geometry when the
+  drive supports LBA. If disabled, native CHS is used.
+
+CONFIG_XTIDE_TRANSLATED_HEADS
+  Number of heads to report in translated CHS geometry (1-255).
+  255 is typical for LBA translation.
+
+CONFIG_XTIDE_TRANSLATED_SECTORS
+  Number of sectors per track in translated CHS geometry (1-63).
+  63 is typical for LBA translation.
+
+CONFIG_XTIDE_POLL_LOOPS
+  Number of polling iterations to wait for IDE status changes.
+  Higher values increase timeout tolerance but slow detection
+  of absent hardware. Minimum 256.
+
+CONFIG_XTIDE_EDD_ENABLED
+  Enable INT 13h extensions (Enhanced Disk Drive services) for
+  LBA access. Required by modern operating systems.
+
+CONFIG_XTIDE_EDD_MAX_BLOCKS
+  Maximum number of sectors per EDD read/write request (1-127).
+
+CONFIG_UART_INIT
+  UART initialization byte written during serial port setup.
+  0xE3 = 9600 baud, 8N1.
+
+CONFIG_RTC_DEFAULT_SECONDS
+  Default RTC seconds value used when battery is dead (0-59).
+
+CONFIG_RTC_DEFAULT_MINUTES
+  Default RTC minutes value used when battery is dead (0-59).
+
+CONFIG_RTC_DEFAULT_HOURS
+  Default RTC hours value used when battery is dead (0-23).
+
+CONFIG_RTC_DEFAULT_DAY_OF_MONTH
+  Default RTC day of month used when battery is dead (1-31).
+
+CONFIG_RTC_DEFAULT_MONTH
+  Default RTC month used when battery is dead (1-12).
+
+CONFIG_RTC_DEFAULT_YEAR
+  Default RTC 2-digit year used when battery is dead (0-99).
+
+CONFIG_RTC_DEFAULT_CENTURY
+  Default RTC century used when battery is dead (19 or 20).
+
+CONFIG_POST_PRETTY_WAIT_PANEL
+  Show a formatted POST progress panel during boot.
+
+CONFIG_POST_SPACE_INVADERS_SOUND
+  Play a Space Invaders-style sound effect through the speaker
+  during cold boot POST.
+
+CONFIG_DEBUG_PORT_E9
+  Route debug output to I/O port 0xE9 (Bochs/QEMU debug console).
+
+CONFIG_DEBUG_COM1
+  Route debug output to the COM1 serial port.
+
+CONFIG_DEBUG_VIDEO_STATE
+  Enable verbose tracing of video state changes.
+
+CONFIG_DEBUG_VIDEO_OVERLAY
+  Enable video debug overlay display.
+
+CONFIG_TRACE_VIDEO_COM1
+  Mirror video trace output to COM1.

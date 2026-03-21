@@ -7,7 +7,8 @@ typedef uint8_t u8;
 typedef uint16_t u16;
 typedef uint32_t u32;
 
-#define BIOS_ROM_SEGMENT 0xF800
+#define BIOS_ROM_SEGMENT 0x9000
+#define BIOS_STACK_OFFSET 0x7C00
 #define BIOS_BDA_SEGMENT 0x0040
 #define BIOS_ABS_SEGMENT 0x0000
 #define BIOS_VIDEO_COLOR_SEGMENT 0xB800
@@ -23,7 +24,7 @@ typedef struct bios_far_vector
 {
   u16 off;
   u16 seg;
-} __attribute__ ((packed)) bios_far_vector_t;
+} __attribute__((packed)) bios_far_vector_t;
 
 typedef struct bios_regs
 {

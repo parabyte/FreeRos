@@ -29,15 +29,11 @@ SECTIONS
 
   .bss (NOLOAD) :
   {
+    __bss_start = .;
     *(.bss*)
     *(COMMON)
+    __bss_end = .;
   } > ROM
 
-  /* Place the reset-vector bytes in the final 16 bytes of the ROM image. */
-  .reset ORIGIN(ROM) + LENGTH(ROM) - 16 :
-  {
-    KEEP(*(.reset))
-  } > ROM
-
-  /DISCARD/ : { *(.note*) *(.comment*) }
+  /DISCARD/ : { *(.note*) *(.comment*) *(.msdos_mz_reloc*) *(.reset) }
 }

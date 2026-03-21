@@ -1,35 +1,27 @@
 #include "bios.h"
 
 /*
- * C cannot express the raw reset-vector control transfer directly, so the
- * final 16 bytes are described as ROM data here. The far jump matches the
- * 32 KiB layout at 0xF8000 and lands in the C entry point.
+ * The reset vector is now in the ROM stub (romstub.asm).
+ * The .reset section is discarded from the payload build.
+ *
+ * bios_reset_entry is the first code in the decompressed payload at
+ * BIOS_ROM_SEGMENT.  The ROM stub decompresses the payload there
+ * and far-jumps here.  The ia16 compiler mixes DS-relative and
+ * SS-relative accesses for near data, so the shadowed BIOS stack must
+ * live in the same segment as the decompressed payload.  Keep SS, DS,
+ * and ES all pointing at BIOS_ROM_SEGMENT so both string literals and
+ * stack-built text buffers render correctly during POST.
  */
-__attribute__ ((used, section (".reset")))
-const u8 bios_reset_vector[16] = {
-  0xEA,
-  0x00,
-  0x00,
-  (u8) (BIOS_ROM_SEGMENT & 0x00FF),
-  (u8) ((BIOS_ROM_SEGMENT >> 8) & 0x00FF),
-  0xFF, 0xFF, 0xFF, 0xFF,
-  0xFF, 0xFF, 0xFF, 0xFF,
-  0xFF, 0xFF, 0xFF
-};
 
-void __far __attribute__ ((section (".start"), noinline, used))
+void __far __attribute__((section (".start"), noinline, used))
 bios_reset_entry (void)
 {
   asm volatile ("cli\n\t"
-                "xor %%ax, %%ax\n\t"
-                "mov %%ax, %%ss\n\t"
-                "mov $0x7000, %%sp\n\t"
-                "mov $0xF800, %%ax\n\t"
-                "mov %%ax, %%ds\n\t"
-                "mov %%ax, %%es\n\t"
-                "cld\n\t"
-                "jmp bios_main"
-                :
-                :
-                : "ax", "memory");
+		"mov %0, %%ax\n\t"
+		"mov %%ax, %%ss\n\t"
+		"mov %1, %%sp\n\t"
+		"mov %%ax, %%ds\n\t"
+		"mov %%ax, %%es\n\t"
+		"cld\n\t" "jmp bios_main"::"i"(BIOS_ROM_SEGMENT),
+		"i"(BIOS_STACK_OFFSET):"ax", "memory");
 }
