@@ -114,7 +114,7 @@ Build outputs
 The ROM is built in stages:
 1. Compile all C sources to a single ELF
 2. Extract raw binary payload (up to 32 KiB)
-3. Compress with Exomizer (`-P63`)
+3. Compress with Exomizer (`-P47`) higher values seem to crash the decruncher. will look into that
 4. Assemble NASM decompressor stub
 5. Pack into 16 KiB ROM image with reset vector
 6. Split into interleaved even/odd chip files
@@ -129,20 +129,9 @@ connected via an 8-bit ISA IDE controller. Supports:
 - Boot from IDE when floppy boot fails (configurable)
 
 The IDE driver is compatible with XTIDE ISA adapters using the standard 8-bit data
-transfer protocol (low byte at base+0, high byte latch at base+8).
+transfer protocol
 
-86Box debug flow
-----------------
-- Debugging targets 86Box in `pc1640` mode.
-- `tools/build_86box_debug.sh` clones or reuses 86Box at `/tmp/86Box_repo`, enables
-  the GDB stub plus Amstrad/I/O/video/serial/ROM logging, and builds a Debug binary.
-- `tools/run_86box_pc1640_debug.sh` stages chip files and original firmware into a
-  local 86Box ROM tree, writes a minimal `pc1640` config, and launches the emulator
-  with log output in `build/86box-vm/86box.log`.
-- The 86Box GDB stub listens on TCP port `12345`.
-- For BIOS-side debug traces during 86Box runs, enable debug options via `make menuconfig`
-  or pass `BIOS_DEBUG_DEFS` such as
-  `-DBIOS_CFG_DEBUG_COM1=1 -DBIOS_CFG_DEBUG_VIDEO_STATE=1`.
+
 
 PCem usage
 ----------
