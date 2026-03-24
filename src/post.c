@@ -552,7 +552,9 @@ bios_post_hardware_init (void)
   bios_floppy_init ();
   bios_printer_init ();
   bios_rtc_init ();
+#if BIOS_CFG_XTIDE_ENABLED
   bios_ide_init ();
+#endif
 }
 
 static void

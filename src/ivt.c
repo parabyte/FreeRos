@@ -65,6 +65,38 @@ void __far bios_int1a_wrapper (void)
 void __far bios_int1b_wrapper (void) __attribute__((interrupt, used));
 void __far bios_int1c_wrapper (void) __attribute__((interrupt, used));
 
+typedef void (*bios_service_fn_t) (bios_regs_t __far *);
+
+static void __attribute__ ((noinline))
+bios_service_dispatch (bios_interrupt_frame_t __seg_ss *frame,
+                       u16 esr, u16 sir, u16 dir,
+                       bios_service_fn_t fn)
+{
+  bios_regs_t regs;
+
+  regs.ax = frame->ax;
+  regs.bx = frame->bx;
+  regs.cx = frame->cx;
+  regs.dx = frame->dx;
+  regs.si = sir;
+  regs.di = dir;
+  regs.bp = frame->bp;
+  regs.ds = frame->ds;
+  regs.es = esr;
+  regs.flags = frame->flags;
+  fn ((bios_regs_t __far *) &regs);
+  frame->ax = regs.ax;
+  frame->bx = regs.bx;
+  frame->cx = regs.cx;
+  frame->dx = regs.dx;
+  frame->si = regs.si;
+  frame->di = regs.di;
+  frame->bp = regs.bp;
+  frame->ds = regs.ds;
+  frame->es = regs.es;
+  frame->flags = regs.flags;
+}
+
 #define BIOS_DEFINE_SERVICE_WRAPPER(wrapper_name, service_name)                 \
   void __far __attribute__ ((interrupt, no_assume_ss_data, used))              \
   wrapper_name (void);                                                          \
@@ -74,62 +106,70 @@ void __far bios_int1c_wrapper (void) __attribute__((interrupt, used));
     register u16 esr __asm__ ("es");                                            \
     register u16 sir __asm__ ("si");                                            \
     register u16 dir __asm__ ("di");                                            \
-    bios_interrupt_frame_t __seg_ss *frame;                                     \
-    bios_regs_t regs;                                                           \
-                                                                                \
-    frame = bios_interrupt_frame_ptr ();                                         \
-    regs.ax = frame->ax;                                                        \
-    regs.bx = frame->bx;                                                        \
-    regs.cx = frame->cx;                                                        \
-    regs.dx = frame->dx;                                                        \
-    regs.si = sir;                                                              \
-    regs.di = dir;                                                              \
-    regs.bp = frame->bp;                                                        \
-    regs.ds = frame->ds;                                                        \
-    regs.es = esr;                                                              \
-    regs.flags = frame->flags;                                                  \
-    service_name ((bios_regs_t __far *) &regs);                                 \
-    frame->ax = regs.ax;                                                        \
-    frame->bx = regs.bx;                                                        \
-    frame->cx = regs.cx;                                                        \
-    frame->dx = regs.dx;                                                        \
-    frame->si = regs.si;                                                        \
-    frame->di = regs.di;                                                        \
-    frame->bp = regs.bp;                                                        \
-    frame->ds = regs.ds;                                                        \
-    frame->es = regs.es;                                                        \
-    frame->flags = regs.flags;                                                  \
+    bios_service_dispatch (bios_interrupt_frame_ptr (),                          \
+                           esr, sir, dir, service_name);                        \
   }
+
+typedef struct bios_vector_entry
+{
+  u8 intno;
+  u16 handler_off;
+} __attribute__((packed)) bios_vector_entry_t;
+
+#define BIOS_VEC(intno, handler) \
+  { (intno), __builtin_ia16_FP_OFF (handler) }
+
+static const bios_vector_entry_t bios_vector_table[] = {
+  BIOS_VEC (0x02, bios_nmi_wrapper),
+  BIOS_VEC (0x05, bios_int05_wrapper),
+  BIOS_VEC (0x06, bios_int06_wrapper),
+  BIOS_VEC (0x08, bios_irq0_wrapper),
+  BIOS_VEC (0x09, bios_irq1_wrapper),
+  BIOS_VEC (0x0D, bios_irq5_wrapper),
+  BIOS_VEC (0x0E, bios_irq6_wrapper),
+  BIOS_VEC (0x0F, bios_irq7_wrapper),
+  BIOS_VEC (0x10, bios_int10_wrapper),
+  BIOS_VEC (0x11, bios_int11_wrapper),
+  BIOS_VEC (0x12, bios_int12_wrapper),
+  BIOS_VEC (0x13, bios_int13_wrapper),
+  BIOS_VEC (0x14, bios_int14_wrapper),
+  BIOS_VEC (0x15, bios_int15_wrapper),
+  BIOS_VEC (0x16, bios_int16_wrapper),
+  BIOS_VEC (0x17, bios_int17_wrapper),
+  BIOS_VEC (0x18, bios_int18_wrapper),
+  BIOS_VEC (0x19, bios_int19_wrapper),
+  BIOS_VEC (0x1A, bios_int1a_wrapper),
+  BIOS_VEC (0x1B, bios_int1b_wrapper),
+  BIOS_VEC (0x1C, bios_int1c_wrapper),
+  BIOS_VEC (0x42, bios_int10_wrapper),
+};
 
 static void
 bios_install_service_vectors (void)
 {
   u8 intno;
+  u8 i;
+  bios_far_vector_t __far *ivt;
+  u16 default_off;
 
+  ivt = (bios_far_vector_t __far *) BIOS_MK_FP (0, 0);
+  default_off = __builtin_ia16_FP_OFF (bios_default_wrapper);
+
+  /* Set INT 00h-1Fh to default IRET handler. */
   for (intno = 0; intno != 0x20; ++intno)
-    BIOS_INSTALL_VECTOR (intno, bios_default_wrapper);
+    {
+      ivt[intno].off = default_off;
+      ivt[intno].seg = BIOS_ROM_SEGMENT;
+    }
 
-  BIOS_INSTALL_VECTOR (0x02, bios_nmi_wrapper);
-  BIOS_INSTALL_VECTOR (0x05, bios_int05_wrapper);
-  BIOS_INSTALL_VECTOR (0x06, bios_int06_wrapper);
-  BIOS_INSTALL_VECTOR (0x08, bios_irq0_wrapper);
-  BIOS_INSTALL_VECTOR (0x09, bios_irq1_wrapper);
-  BIOS_INSTALL_VECTOR (0x0D, bios_irq5_wrapper);
-  BIOS_INSTALL_VECTOR (0x0E, bios_irq6_wrapper);
-  BIOS_INSTALL_VECTOR (0x0F, bios_irq7_wrapper);
-  BIOS_INSTALL_VECTOR (0x10, bios_int10_wrapper);
-  BIOS_INSTALL_VECTOR (0x11, bios_int11_wrapper);
-  BIOS_INSTALL_VECTOR (0x12, bios_int12_wrapper);
-  BIOS_INSTALL_VECTOR (0x13, bios_int13_wrapper);
-  BIOS_INSTALL_VECTOR (0x14, bios_int14_wrapper);
-  BIOS_INSTALL_VECTOR (0x15, bios_int15_wrapper);
-  BIOS_INSTALL_VECTOR (0x16, bios_int16_wrapper);
-  BIOS_INSTALL_VECTOR (0x17, bios_int17_wrapper);
-  BIOS_INSTALL_VECTOR (0x18, bios_int18_wrapper);
-  BIOS_INSTALL_VECTOR (0x19, bios_int19_wrapper);
-  BIOS_INSTALL_VECTOR (0x1A, bios_int1a_wrapper);
-  BIOS_INSTALL_VECTOR (0x1B, bios_int1b_wrapper);
-  BIOS_INSTALL_VECTOR (0x1C, bios_int1c_wrapper);
+  /* Install specific service handlers from table. */
+  for (i = 0; i != sizeof (bios_vector_table) / sizeof (bios_vector_table[0]);
+       ++i)
+    {
+      ivt[bios_vector_table[i].intno].off = bios_vector_table[i].handler_off;
+      ivt[bios_vector_table[i].intno].seg = BIOS_ROM_SEGMENT;
+    }
+
   /*
    * The PEGA option ROM owns the video parameter table and font vectors.
    * Leave INT 1Dh and INT 43h empty until the option ROM installs them.
@@ -137,7 +177,6 @@ bios_install_service_vectors (void)
   bios_abs_write32 (0x0000, (u16) 0x1D * 4U, 0x00000000UL);
   BIOS_INSTALL_DATA_VECTOR (0x1E, bios_diskette_parameter_table);
   bios_abs_write32 (0x0000, (u16) 0x1F * 4U, 0x00000000UL);
-  BIOS_INSTALL_VECTOR (0x42, bios_int10_wrapper);
   bios_abs_write32 (0x0000, (u16) 0x43 * 4U, 0x00000000UL);
   bios_abs_write32 (0x0000, (u16) 0x41 * 4U, 0x00000000UL);
   bios_abs_write32 (0x0000, (u16) 0x46 * 4U, 0x00000000UL);

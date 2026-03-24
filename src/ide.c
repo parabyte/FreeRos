@@ -588,7 +588,9 @@ bios_ide_validate_request (const bios_regs_t __far *regs,
 }
 
 static int
-bios_ide_program_lba_sector (u8 unit, u32 lba, u8 command, u8 *status_out)
+bios_ide_setup_command (u8 unit, u8 reg3, u8 reg4, u8 reg5,
+                        u8 head_bits, int lba_mode, u8 count,
+                        u8 command, u8 *status_out)
 {
   if (!bios_ide_wait_not_busy ())
     {
@@ -597,62 +599,44 @@ bios_ide_program_lba_sector (u8 unit, u32 lba, u8 command, u8 *status_out)
     }
 
   bios_ide_write_reg (0x01, 0x00);
-  bios_ide_write_reg (0x02, 0x01);
-
-  bios_ide_write_reg (0x03, (u8) lba);
-  bios_ide_write_reg (0x04, (u8) (lba >> 8));
-  bios_ide_write_reg (0x05, (u8) (lba >> 16));
-  bios_ide_select_drive (unit, (u8) (lba >> 24), 1);
-
+  bios_ide_write_reg (0x02, count);
+  bios_ide_write_reg (0x03, reg3);
+  bios_ide_write_reg (0x04, reg4);
+  bios_ide_write_reg (0x05, reg5);
+  bios_ide_select_drive (unit, head_bits, lba_mode);
   bios_ide_write_reg (0x07, command);
   bios_ide_delay_400ns ();
-  if (!bios_ide_wait_drq (status_out))
-    {
-      *status_out = bios_ide_status_from_hw (*status_out);
-      return 0;
-    }
-
   return 1;
 }
 
 static int
-bios_ide_program_chs_sector (u8 unit, u16 cylinder, u8 head, u8 sector,
-                             u8 command, u8 *status_out)
+bios_ide_setup_lba_command (u8 unit, u32 lba, u8 count, u8 command,
+                            u8 *status_out)
 {
-  if (!bios_ide_wait_not_busy ())
-    {
-      *status_out = FLOPPY_ST_TIMEOUT;
-      return 0;
-    }
-
-  bios_ide_write_reg (0x01, 0x00);
-  bios_ide_write_reg (0x02, 0x01);
-  bios_ide_write_reg (0x03, sector);
-  bios_ide_write_reg (0x04, (u8) cylinder);
-  bios_ide_write_reg (0x05, (u8) (cylinder >> 8));
-  bios_ide_select_drive (unit, head, 0);
-
-  bios_ide_write_reg (0x07, command);
-  bios_ide_delay_400ns ();
-  if (!bios_ide_wait_drq (status_out))
-    {
-      *status_out = bios_ide_status_from_hw (*status_out);
-      return 0;
-    }
-
-  return 1;
+  return bios_ide_setup_command (unit, (u8) lba, (u8) (lba >> 8),
+                                (u8) (lba >> 16), (u8) (lba >> 24),
+                                1, count, command, status_out);
 }
 
 static int
-bios_ide_program_packet_sector (const bios_ide_drive_t *drive, u8 unit, u32 lba,
-                                u8 command, u8 *status_out)
+bios_ide_setup_chs_command (u8 unit, u16 cylinder, u8 head, u8 sector,
+                            u8 count, u8 command, u8 *status_out)
+{
+  return bios_ide_setup_command (unit, sector, (u8) cylinder,
+                                (u8) (cylinder >> 8), head,
+                                0, count, command, status_out);
+}
+
+static int
+bios_ide_setup_packet_command (const bios_ide_drive_t *drive, u8 unit,
+                               u32 lba, u8 count, u8 command, u8 *status_out)
 {
   u16 cylinder;
   u8 head;
   u8 sector;
 
   if (drive->lba_supported)
-    return bios_ide_program_lba_sector (unit, lba, command, status_out);
+    return bios_ide_setup_lba_command (unit, lba, count, command, status_out);
 
   if (!bios_ide_lba_to_chs (drive, lba, &cylinder, &head, &sector))
     {
@@ -660,69 +644,23 @@ bios_ide_program_packet_sector (const bios_ide_drive_t *drive, u8 unit, u32 lba,
       return 0;
     }
 
-  return bios_ide_program_chs_sector (unit, cylinder, head, sector, command,
-                                      status_out);
+  return bios_ide_setup_chs_command (unit, cylinder, head, sector, count,
+                                     command, status_out);
 }
 
 static int
-bios_ide_issue_lba_nodata_command (u8 unit, u32 lba, u8 count, u8 command,
-                                   u8 *status_out)
+bios_ide_program_packet_sector (const bios_ide_drive_t *drive, u8 unit,
+                                u32 lba, u8 command, u8 *status_out)
 {
-  u8 status;
+  if (!bios_ide_setup_packet_command (drive, unit, lba, 1, command, status_out))
+    return 0;
 
-  if (!bios_ide_wait_not_busy ())
+  if (!bios_ide_wait_drq (status_out))
     {
-      *status_out = FLOPPY_ST_TIMEOUT;
+      *status_out = bios_ide_status_from_hw (*status_out);
       return 0;
     }
 
-  bios_ide_write_reg (0x01, 0x00);
-  bios_ide_write_reg (0x02, count);
-  bios_ide_write_reg (0x03, (u8) lba);
-  bios_ide_write_reg (0x04, (u8) (lba >> 8));
-  bios_ide_write_reg (0x05, (u8) (lba >> 16));
-  bios_ide_select_drive (unit, (u8) (lba >> 24), 1);
-  bios_ide_write_reg (0x07, command);
-  bios_ide_delay_400ns ();
-
-  if (!bios_ide_wait_command_done (&status))
-    {
-      *status_out = bios_ide_status_from_hw (status);
-      return 0;
-    }
-
-  *status_out = FLOPPY_ST_OK;
-  return 1;
-}
-
-static int
-bios_ide_issue_chs_nodata_command (u8 unit, u16 cylinder, u8 head, u8 sector,
-                                   u8 count, u8 command, u8 *status_out)
-{
-  u8 status;
-
-  if (!bios_ide_wait_not_busy ())
-    {
-      *status_out = FLOPPY_ST_TIMEOUT;
-      return 0;
-    }
-
-  bios_ide_write_reg (0x01, 0x00);
-  bios_ide_write_reg (0x02, count);
-  bios_ide_write_reg (0x03, sector);
-  bios_ide_write_reg (0x04, (u8) cylinder);
-  bios_ide_write_reg (0x05, (u8) (cylinder >> 8));
-  bios_ide_select_drive (unit, head, 0);
-  bios_ide_write_reg (0x07, command);
-  bios_ide_delay_400ns ();
-
-  if (!bios_ide_wait_command_done (&status))
-    {
-      *status_out = bios_ide_status_from_hw (status);
-      return 0;
-    }
-
-  *status_out = FLOPPY_ST_OK;
   return 1;
 }
 
@@ -731,22 +669,20 @@ bios_ide_issue_packet_nodata_command (const bios_ide_drive_t *drive, u8 unit,
                                       u32 lba, u8 count, u8 command,
                                       u8 *status_out)
 {
-  u16 cylinder;
-  u8 head;
-  u8 sector;
+  u8 status;
 
-  if (drive->lba_supported)
-    return bios_ide_issue_lba_nodata_command (unit, lba, count, command,
-                                              status_out);
+  if (!bios_ide_setup_packet_command (drive, unit, lba, count, command,
+                                      status_out))
+    return 0;
 
-  if (!bios_ide_lba_to_chs (drive, lba, &cylinder, &head, &sector))
+  if (!bios_ide_wait_command_done (&status))
     {
-      *status_out = FLOPPY_ST_SECTOR_NOT_FOUND;
+      *status_out = bios_ide_status_from_hw (status);
       return 0;
     }
 
-  return bios_ide_issue_chs_nodata_command (unit, cylinder, head, sector, count,
-                                            command, status_out);
+  *status_out = FLOPPY_ST_OK;
+  return 1;
 }
 
 static int
@@ -786,11 +722,8 @@ bios_ide_transfer (bios_regs_t __far *regs, u8 command)
   bios_ide_drive_t *drive;
   u8 count;
   u8 done;
-  u8 head;
-  u8 sector;
   u8 status;
   u8 unit;
-  u16 cylinder;
   u16 offset;
   u32 lba;
 
@@ -801,18 +734,9 @@ bios_ide_transfer (bios_regs_t __far *regs, u8 command)
     }
 
   offset = regs->bx;
-  head = bios_hi (regs->dx);
-  sector = (u8) (bios_lo (regs->cx) & 0x3FU);
-  cylinder = (u16) (bios_hi (regs->cx) | ((bios_lo (regs->cx) & 0xC0U) << 2));
 
   bios_serial_debug_puts (command == IDE_CMD_READ_SECTORS ? "IR " : "IW ");
   bios_serial_debug_put_hex8 (bios_lo (regs->dx));
-  bios_serial_debug_puts (" C");
-  bios_serial_debug_put_hex16 (cylinder);
-  bios_serial_debug_puts (" H");
-  bios_serial_debug_put_hex8 (head);
-  bios_serial_debug_puts (" S");
-  bios_serial_debug_put_hex8 (sector);
   bios_serial_debug_puts (" N");
   bios_serial_debug_put_hex8 (count);
   bios_serial_debug_puts (" E");
@@ -825,11 +749,8 @@ bios_ide_transfer (bios_regs_t __far *regs, u8 command)
     {
       u8 hw_status;
 
-      if ((drive->use_lba
-           && !bios_ide_program_lba_sector (unit, lba, command, &hw_status))
-          || (!drive->use_lba
-              && !bios_ide_program_chs_sector (unit, cylinder, head, sector,
-                                               command, &hw_status)))
+      if (!bios_ide_program_packet_sector (drive, unit, lba, command,
+                                           &hw_status))
         {
           bios_ide_complete (regs, hw_status, done);
           return;
@@ -846,26 +767,7 @@ bios_ide_transfer (bios_regs_t __far *regs, u8 command)
           return;
         }
 
-      if (command == IDE_CMD_READ_SECTORS)
-        {
-          bios_serial_debug_puts ("IS ");
-          bios_serial_debug_put_hex16 (bios_abs_read16 (regs->es,
-                                                        (u16) (offset + 510U)));
-          bios_serial_debug_putc ('\n');
-        }
-
       lba++;
-      sector++;
-      if (sector > drive->sectors)
-        {
-          sector = 1;
-          head++;
-          if (head >= drive->heads)
-            {
-              head = 0;
-              cylinder++;
-            }
-        }
       offset = (u16) (offset + BIOS_IDE_BYTES_PER_SECTOR);
     }
 
@@ -1555,7 +1457,9 @@ bios_ide_init (void)
     {
       unit = bios_ide_bios_units[bios_index];
       bios_ide_build_parameter_table (bios_index, &bios_ide_drives[unit]);
+#if BIOS_CFG_XTIDE_EDD_ENABLED
       bios_ide_build_dpte_table (unit, &bios_ide_drives[unit]);
+#endif
     }
 
   bios_ide_install_vector (0x41, 0);
@@ -1634,6 +1538,7 @@ bios_ide_service_int13 (bios_regs_t __far *regs)
       bios_ide_drive_type (regs);
       break;
 
+#if BIOS_CFG_XTIDE_EDD_ENABLED
     case 0x41:
       bios_ide_edd_install_check (regs);
       break;
@@ -1657,6 +1562,7 @@ bios_ide_service_int13 (bios_regs_t __far *regs)
     case 0x48:
       bios_ide_edd_get_parameters (regs);
       break;
+#endif
 
     default:
       bios_ide_complete (regs, FLOPPY_ST_BAD_COMMAND, 0);

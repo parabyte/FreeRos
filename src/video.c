@@ -268,10 +268,8 @@ bios_video_puts (const char *text)
 void
 bios_video_put_hex8 (u8 value)
 {
-  static const char hex[] = "0123456789ABCDEF";
-
-  bios_video_putc (hex[(value >> 4) & 0x0F]);
-  bios_video_putc (hex[value & 0x0F]);
+  bios_video_putc (bios_hex_digits[(value >> 4) & 0x0F]);
+  bios_video_putc (bios_hex_digits[value & 0x0F]);
 }
 
 void
@@ -357,11 +355,10 @@ bios_video_puts_at (u8 row, u8 col, u8 attr, const char *text)
 void
 bios_video_put_hex8_at (u8 row, u8 col, u8 attr, u8 value)
 {
-  static const char hex[] = "0123456789ABCDEF";
   char text[3];
 
-  text[0] = hex[(value >> 4) & 0x0F];
-  text[1] = hex[value & 0x0F];
+  text[0] = bios_hex_digits[(value >> 4) & 0x0F];
+  text[1] = bios_hex_digits[value & 0x0F];
   text[2] = '\0';
   bios_video_puts_at (row, col, attr, text);
 }

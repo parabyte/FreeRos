@@ -125,10 +125,8 @@ bios_serial_debug_puts (const char *text)
 void
 bios_serial_debug_put_hex8 (u8 value)
 {
-  static const char hex[] = "0123456789ABCDEF";
-
-  bios_serial_debug_putc (hex[(value >> 4) & 0x0F]);
-  bios_serial_debug_putc (hex[value & 0x0F]);
+  bios_serial_debug_putc (bios_hex_digits[(value >> 4) & 0x0F]);
+  bios_serial_debug_putc (bios_hex_digits[value & 0x0F]);
 }
 
 void

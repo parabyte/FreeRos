@@ -973,7 +973,11 @@ bios_service_int13 (bios_regs_t __far *regs)
 
   if (bios_lo (regs->dx) >= 0x80)
     {
+#if BIOS_CFG_XTIDE_ENABLED
       bios_ide_service_int13 (regs);
+#else
+      bios_floppy_complete (regs, FLOPPY_ST_BAD_COMMAND, 0);
+#endif
       return;
     }
 

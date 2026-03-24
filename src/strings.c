@@ -11,3 +11,4 @@ const char bios_str_en_memory_parity[] = "memory (parity error)";
 const char bios_str_en_vdu_ram[] = "VDU RAM";
 const char bios_str_en_ros_checksum[] = "ROS checksum";
 const char bios_str_amstrad_copyright[] = "(c)1988 Amstrad plc";
+const char bios_hex_digits[] = "0123456789ABCDEF";

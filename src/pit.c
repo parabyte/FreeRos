@@ -6,47 +6,6 @@
 
 static void bios_speaker_square_wave_ticks (u16 divisor, u16 ticks);
 
-static u32
-bios_udivmod_u32_u16 (u32 dividend, u16 divisor, u16 *remainder)
-{
-  u32 quotient;
-  u32 rem;
-  u8 bit;
-
-  quotient = 0;
-  rem = 0;
-  for (bit = 0; bit != 32; ++bit)
-    {
-      rem = (rem << 1) | ((dividend >> 31) & 1UL);
-      dividend <<= 1;
-      quotient <<= 1;
-      if (rem >= divisor)
-	{
-	  rem -= divisor;
-	  quotient |= 1U;
-	}
-    }
-
-  if (remainder != 0)
-    *remainder = (u16) rem;
-  return quotient;
-}
-
-static u16
-bios_pit_read_counter0 (void)
-{
-  u8 lo;
-  u8 hi;
-
-  bios_hw_disable_interrupts ();
-  bios_hw_out8 (0x00, PORT_PIT_MODE);
-  lo = bios_hw_in8 (PORT_PIT_CH0);
-  hi = bios_hw_in8 (PORT_PIT_CH0);
-  bios_hw_enable_interrupts ();
-
-  return (u16) lo | (u16) hi << 8;
-}
-
 void
 bios_wait_timer_ticks (u16 ticks)
 {
@@ -63,50 +22,64 @@ bios_wait_timer_ticks (u16 ticks)
 void
 bios_wait_microseconds (u32 delay_us)
 {
-  u32 whole_ticks;
-  u16 remainder_us;
-  u16 remainder_counts;
-  u32 start_ticks;
-  u16 start_counter;
+  u16 start;
+  u16 counts;
+  u8 lo;
+  u8 hi;
 
   if (delay_us == 0)
     return;
 
-  whole_ticks = bios_udivmod_u32_u16 (delay_us, (u16) BIOS_TIMER_TICK_US,
-				      &remainder_us);
-
-  if (whole_ticks != 0)
+  /*
+   * Convert microseconds to PIT counts (1.193182 MHz).
+   * For delays up to ~54 ms (one timer tick), use the PIT channel 0
+   * countdown directly.  For longer delays, fall through to tick-based
+   * waiting.  The callers in this BIOS only need short sub-tick delays
+   * (printer strobe timing), so the simple path covers all current uses.
+   *
+   * counts = delay_us * 1193182 / 1000000 ≈ delay_us + delay_us / 5
+   * This slightly overestimates, which is safe for minimum-delay usage.
+   */
+  if (delay_us >= BIOS_TIMER_TICK_US)
     {
-      start_ticks = bios_bda_read32 (BDA_TIMER_TICKS);
-      while ((u32) (bios_bda_read32 (BDA_TIMER_TICKS) - start_ticks) <
-	     whole_ticks)
-	bios_hw_pause ();
+      u16 ticks;
+
+      ticks = 0;
+      while (delay_us >= BIOS_TIMER_TICK_US)
+        {
+          delay_us -= BIOS_TIMER_TICK_US;
+          ticks++;
+        }
+      bios_wait_timer_ticks ((u16) (ticks + 1U));
+      return;
     }
 
-  if (remainder_us == 0)
-    return;
+  /* counts ≈ delay_us * 1.2 ≈ delay_us + delay_us/4 (slight overcount is safe) */
+  counts = (u16) delay_us + (u16) (delay_us >> 2);
+  if (counts == 0)
+    counts = 1;
 
-  remainder_counts = (u16) bios_udivmod_u32_u16 (((u32) remainder_us << 16)
-						 + BIOS_TIMER_TICK_US - 1UL,
-						 (u16) BIOS_TIMER_TICK_US,
-						 (u16 *) 0);
-  if (remainder_counts == 0)
-    return;
+  /* Latch and read channel 0. */
+  bios_hw_disable_interrupts ();
+  bios_hw_out8 (0x00, PORT_PIT_MODE);
+  lo = bios_hw_in8 (PORT_PIT_CH0);
+  hi = bios_hw_in8 (PORT_PIT_CH0);
+  bios_hw_enable_interrupts ();
+  start = (u16) lo | (u16) hi << 8;
 
-  start_ticks = bios_bda_read32 (BDA_TIMER_TICKS);
-  start_counter = bios_pit_read_counter0 ();
   for (;;)
     {
-      u32 current_ticks;
-      u16 current_counter;
+      u16 now;
 
-      current_ticks = bios_bda_read32 (BDA_TIMER_TICKS);
-      if ((u32) (current_ticks - start_ticks) != 0)
-	break;
+      bios_hw_disable_interrupts ();
+      bios_hw_out8 (0x00, PORT_PIT_MODE);
+      lo = bios_hw_in8 (PORT_PIT_CH0);
+      hi = bios_hw_in8 (PORT_PIT_CH0);
+      bios_hw_enable_interrupts ();
+      now = (u16) lo | (u16) hi << 8;
 
-      current_counter = bios_pit_read_counter0 ();
-      if ((u16) (start_counter - current_counter) >= remainder_counts)
-	break;
+      if ((u16) (start - now) >= counts)
+        break;
 
       bios_hw_pause ();
     }

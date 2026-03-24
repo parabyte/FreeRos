@@ -219,6 +219,7 @@ extern const char bios_str_en_memory_parity[];
 extern const char bios_str_en_vdu_ram[];
 extern const char bios_str_en_ros_checksum[];
 extern const char bios_str_amstrad_copyright[];
+extern const char bios_hex_digits[];
 
 void bios_main (void);
 void __far bios_reset_entry (void);
