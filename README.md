@@ -12,17 +12,14 @@ commercial purposes please contact me.
 FreeRos PC1640 Compatible BIOS
 ==============================
 
-A clean-room C implementation of the Amstrad PC1640 BIOS with behavioral fidelity.
-This project is not byte-identical to the original ROM and is not expected to match
-the original binary.
+A clean-room C implementation of the Amstrad PC1640 BIOS with hopefully same behavior.
 
 Implementation notes
 --------------------
 - The BIOS uses GNU-style IA-16 inline assembly where real 8086 instructions are
   required: reset entry, interrupt wrappers, port I/O, and boot transfer.
 - Machine state that genuinely lives in RAM still has software mirrors in the
-  BDA/private work area, but device access now goes through the real x86 I/O ports
-  rather than a synthetic port shadow model.
+  BDA/private work area.
 
 Layout
 ------
@@ -35,9 +32,9 @@ Layout
 
 Prerequisites
 -------------
-- **ia16-elf-gcc** cross compiler (expected at `/home/arduino/elks/cross/bin`).
+- **ia16-elf-gcc** cross compiler (expected at `~/somewhere`). i recommend downloading elks and using elks toolchain as that is what i use.
 - **nasm** assembler.
-- **python3** (for ROM image tools and Exomizer bootstrap only).
+- **python3** (for ROM image tools and Exomizer bootstrap only).i am going to drop the python code. was good for prototyping
 - **ncurses** development headers (for `make menuconfig`).
 - **GNU make**.
 
@@ -130,6 +127,8 @@ connected via an 8-bit ISA IDE controller. Supports:
 
 The IDE driver is compatible with XTIDE ISA adapters using the standard 8-bit data
 transfer protocol
+
+**note at the moment due to optimization reasons, you can either have floppy or ide, not both, sorry! 
 
 
 
