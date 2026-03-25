@@ -9,6 +9,11 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND
 
 commercial purposes please contact me.
 
+
+currently undergoing a complete refactor, refer to discussions for context.
+
+
+
 FreeRos PC1640 Compatible BIOS
 ==============================
 
