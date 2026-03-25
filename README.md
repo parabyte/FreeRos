@@ -14,7 +14,7 @@ currently undergoing a complete refactor, refer to discussions for context.
 
 
 
-FreeRos PC1640 Compatible BIOS
+Currently being refactored, refer to discussions
 ==============================
 
 A clean-room C implementation of the Amstrad PC1640 BIOS with hopefully same behavior.
