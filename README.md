@@ -11,6 +11,8 @@ Scope
   hard disk images.
 - Keeps only the Exomizer-related build hook needed to compress payloads during
   the build plus the BIOS-side decompression code already used by the ROM.
+- Builds Exomizer in a disposable temporary tree and retains only the local
+  compressor binary plus a small version stamp under `build/exomizer-bin/`.
 
 Prerequisites
 -------------

@@ -1,8 +1,9 @@
 """
 Fetch and build the upstream Exomizer tool on demand.
 
-The first build downloads the official 3.1.2 source zip, verifies it, and
-builds the local `exomizer` binary under the requested output tree.
+The build runs in a disposable temporary tree and installs only the local
+`exomizer` binary plus a small version stamp under the requested output tree.
+That keeps the project from retaining the full upstream source dump in `build/`.
 """
 
 from __future__ import annotations
@@ -11,6 +12,7 @@ import hashlib
 import os
 import subprocess
 import sys
+import tempfile
 import urllib.request
 import zipfile
 from pathlib import Path
@@ -75,27 +77,41 @@ def build_exomizer(root: Path) -> Path:
     return binary
 
 
+def version_stamp_path(output: Path) -> Path:
+    return output.parent / "exomizer.version.txt"
+
+
+def output_is_current(output: Path) -> bool:
+    stamp = version_stamp_path(output)
+    if not (output.exists() and os.access(output, os.X_OK) and stamp.exists()):
+        return False
+    return stamp.read_text(encoding="utf-8").strip() == EXOMIZER_VERSION
+
+
 def main() -> int:
     if len(sys.argv) != 2:
         print("usage: ensure_exomizer.py <output-executable>", file=sys.stderr)
         return 1
 
     output = Path(sys.argv[1])
-    if output.exists() and os.access(output, os.X_OK):
+    if output_is_current(output):
         return 0
 
-    source_root = output.parent.parent
-    source_root.mkdir(parents=True, exist_ok=True)
-    archive = source_root / f"exomizer-{EXOMIZER_VERSION}.zip"
+    output.parent.mkdir(parents=True, exist_ok=True)
 
-    ensure_archive(archive)
-    extract_archive(archive, source_root)
-    built = build_exomizer(source_root)
+    with tempfile.TemporaryDirectory(prefix="freeros-exomizer-") as temp_dir:
+        temp_root = Path(temp_dir)
+        archive = temp_root / f"exomizer-{EXOMIZER_VERSION}.zip"
+        source_root = temp_root / "source"
 
-    if built != output:
-        output.parent.mkdir(parents=True, exist_ok=True)
+        ensure_archive(archive)
+        extract_archive(archive, source_root)
+        built = build_exomizer(source_root)
+
         output.write_bytes(built.read_bytes())
         output.chmod(output.stat().st_mode | 0o111)
+
+    version_stamp_path(output).write_text(f"{EXOMIZER_VERSION}\n", encoding="utf-8")
 
     print(f"ready: {output}", file=sys.stderr)
     return 0
