@@ -1,4 +1,13 @@
+/* ================================================
+ * FreeRos BIOS
+ * serial.c: INT 14h UART/RS-232 serial port services
+ * ================================================ */
+
 #include "bios.h"
+
+/* ================================================
+ * UART register definitions
+ * ================================================ */
 
 enum
 {
@@ -12,6 +21,7 @@ enum
 
 #define UART_LSR_DATA_READY 0x01
 #define UART_LSR_THR_EMPTY 0x20
+#define UART_MCR_DTR 0x01
 #define UART_MCR_RTS 0x02
 #define UART_MSR_CTS 0x10
 
@@ -60,6 +70,10 @@ bios_serial_available (u16 index)
   return bios_serial_base (index) != 0;
 }
 
+/* ================================================
+ * Initialization
+ * ================================================ */
+
 void
 bios_serial_init (void)
 {
@@ -77,6 +91,10 @@ bios_serial_init (void)
   bios_hw_out8 (0x03, bios_serial_port (0, UART_REG_MCR));
   bios_work_write8 (WK_SERIAL_STATUS, 0x60);
 }
+
+/* ================================================
+ * Debug output
+ * ================================================ */
 
 #if BIOS_CFG_DEBUG_PORT_E9 || BIOS_CFG_DEBUG_COM1
 static void
@@ -137,6 +155,10 @@ bios_serial_debug_put_hex16 (u16 value)
 }
 #endif
 
+/* ================================================
+ * INT 14h service dispatch
+ * ================================================ */
+
 void
 bios_service_int14 (bios_regs_t __far *regs)
 {
@@ -166,8 +188,18 @@ bios_service_int14 (bios_regs_t __far *regs)
       bios_hw_out8 ((u8) (divisor >> 8), port + UART_REG_IER);
       bios_hw_out8 (bios_serial_line_control (bios_lo (regs->ax)),
 		    bios_serial_port (port_index, UART_REG_LCR));
+      bios_hw_out8 ((u8) (UART_MCR_DTR | UART_MCR_RTS),
+                    bios_serial_port (port_index, UART_REG_MCR));
+      lsr = 0;
+      for (attempts = 0; attempts != 0x4000; ++attempts)
+        {
+          lsr = bios_hw_in8 (bios_serial_port (port_index, UART_REG_LSR));
+          if ((lsr & UART_LSR_THR_EMPTY) != 0)
+            break;
+          bios_hw_pause ();
+        }
       bios_set_hi (&regs->ax,
-		   bios_hw_in8 (bios_serial_port (port_index, UART_REG_LSR)));
+		   lsr);
       bios_set_lo (&regs->ax, bios_hw_in8 ((u16) (port + 6)));
       bios_clear_cf (regs);
       break;

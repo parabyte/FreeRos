@@ -41,3 +41,9 @@ bios_pic_ack_irq (u8 irq)
 {
   bios_io_write (PORT_PIC_CMD, (u8) (0x60 | (irq & 0x07)));
 }
+
+void
+bios_pic_enable_runtime_irqs (void)
+{
+  bios_hw_out8 (0xBC, PORT_PIC_DATA);
+}

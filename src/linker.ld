@@ -7,13 +7,9 @@ SECTIONS
 {
   . = ORIGIN(ROM);
 
-  .start :
-  {
-    KEEP(*(.start))
-  } > ROM
-
   .text :
   {
+    KEEP(*(.start))
     *(.text*)
   } > ROM
 

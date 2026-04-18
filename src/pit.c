@@ -6,17 +6,43 @@
 
 static void bios_speaker_square_wave_ticks (u16 divisor, u16 ticks);
 
+static u8
+bios_pit_read_port61 (void)
+{
+  u8 value;
+
+  asm volatile ("inb $0x61,%%al":"=Ral" (value));
+  bios_work_write8 (WK_PORT61, value);
+  return value;
+}
+
+static void
+bios_pit_write_port61 (u8 value)
+{
+  bios_work_write8 (WK_PORT61, value);
+  asm volatile ("outb %%al,$0x61"::"Ral" (value));
+}
+
 void
 bios_wait_timer_ticks (u16 ticks)
 {
+  u16 flags;
   u32 start_ticks;
 
   if (ticks == 0)
     return;
 
+  /*
+   * Tick-based waits only make forward progress if IRQ0 can run. Preserve the
+   * caller's IF state so INT handlers can safely borrow this helper without
+   * leaving interrupts enabled on return.
+   */
+  flags = bios_hw_irq_save_disable ();
   start_ticks = bios_bda_read32 (BDA_TIMER_TICKS);
+  bios_hw_enable_interrupts ();
   while ((u32) (bios_bda_read32 (BDA_TIMER_TICKS) - start_ticks) < ticks)
     bios_hw_pause ();
+  bios_hw_irq_restore (flags);
 }
 
 void
@@ -179,13 +205,12 @@ bios_speaker_square_wave_ticks (u16 divisor, u16 ticks)
   bios_hw_out8 ((u8) (divisor & 0x00FF), PORT_PIT_CH2);
   bios_hw_out8 ((u8) (divisor >> 8), PORT_PIT_CH2);
 
-  port61 = bios_io_read (PORT_PPI_PORT_B);
-  bios_io_write (PORT_PPI_PORT_B,
-		 (u8) (port61 | PORT61_SPEAKER_GATE | PORT61_SPEAKER_DATA));
+  port61 = bios_pit_read_port61 ();
+  bios_pit_write_port61 ((u8) (port61 | PORT61_SPEAKER_GATE
+                               | PORT61_SPEAKER_DATA));
   bios_wait_timer_ticks (ticks);
-  bios_io_write (PORT_PPI_PORT_B,
-		 (u8) (port61 & (u8) ~ (PORT61_SPEAKER_GATE
-					| PORT61_SPEAKER_DATA)));
+  bios_pit_write_port61 ((u8) (port61 & (u8) ~ (PORT61_SPEAKER_GATE
+                                                | PORT61_SPEAKER_DATA)));
 }
 
 void

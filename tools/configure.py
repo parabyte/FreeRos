@@ -234,12 +234,6 @@ OPTIONS = [
         "max": 0x03F0,
     },
     {
-        "key": "CONFIG_XTIDE_BOOT_ENABLED",
-        "label": "Try XTIDE boot in INT 19h",
-        "type": "bool",
-        "default": True,
-    },
-    {
         "key": "CONFIG_XTIDE_PROBE_MASTER",
         "label": "Probe master device",
         "type": "bool",
@@ -294,6 +288,36 @@ OPTIONS = [
         "default": 127,
         "min": 1,
         "max": 127,
+    },
+    {"section": "Boot"},
+    {
+        "key": "CONFIG_HD_BOOT_ENABLED",
+        "label": "INT 19h hard-disk boot",
+        "type": "bool",
+        "default": False,
+    },
+    {"section": "EMS"},
+    {
+        "key": "CONFIG_EMS_ENABLED",
+        "label": "Lo-tech 2MB EMS (INT 67h)",
+        "type": "bool",
+        "default": False,
+    },
+    {
+        "key": "CONFIG_EMS_IO_BASE",
+        "label": "EMS board base I/O",
+        "type": "hex",
+        "default": 0x0260,
+        "min": 0x0200,
+        "max": 0x03F0,
+    },
+    {
+        "key": "CONFIG_EMS_FRAME_SEGMENT",
+        "label": "EMS page frame segment",
+        "type": "hex",
+        "default": 0xD000,
+        "min": 0xC000,
+        "max": 0xE000,
     },
     {"section": "RTC"},
     {
@@ -359,6 +383,78 @@ OPTIONS = [
         "default": 19,
         "min": 0,
         "max": 99,
+    },
+    {
+        "key": "CONFIG_PC1640_NVR_ENTER_TOKEN",
+        "label": "PC1640 NVR enter token",
+        "type": "hex",
+        "default": 0x1C0D,
+        "min": 0x0000,
+        "max": 0xFFFF,
+    },
+    {
+        "key": "CONFIG_PC1640_NVR_DELETE_TOKEN",
+        "label": "PC1640 NVR delete token",
+        "type": "hex",
+        "default": 0x2207,
+        "min": 0x0000,
+        "max": 0xFFFF,
+    },
+    {
+        "key": "CONFIG_PC1640_NVR_JOYSTICK1_TOKEN",
+        "label": "PC1640 NVR joystick 1 token",
+        "type": "hex",
+        "default": 0xFFFF,
+        "min": 0x0000,
+        "max": 0xFFFF,
+    },
+    {
+        "key": "CONFIG_PC1640_NVR_JOYSTICK2_TOKEN",
+        "label": "PC1640 NVR joystick 2 token",
+        "type": "hex",
+        "default": 0xFFFF,
+        "min": 0x0000,
+        "max": 0xFFFF,
+    },
+    {
+        "key": "CONFIG_PC1640_NVR_MOUSE1_TOKEN",
+        "label": "PC1640 NVR mouse button 1 token",
+        "type": "hex",
+        "default": 0xFFFF,
+        "min": 0x0000,
+        "max": 0xFFFF,
+    },
+    {
+        "key": "CONFIG_PC1640_NVR_MOUSE2_TOKEN",
+        "label": "PC1640 NVR mouse button 2 token",
+        "type": "hex",
+        "default": 0xFFFF,
+        "min": 0x0000,
+        "max": 0xFFFF,
+    },
+    {
+        "key": "CONFIG_PC1640_NVR_MOUSE_X_SCALE",
+        "label": "PC1640 NVR mouse X scale",
+        "type": "int",
+        "default": 10,
+        "min": 0,
+        "max": 255,
+    },
+    {
+        "key": "CONFIG_PC1640_NVR_MOUSE_Y_SCALE",
+        "label": "PC1640 NVR mouse Y scale",
+        "type": "int",
+        "default": 10,
+        "min": 0,
+        "max": 255,
+    },
+    {
+        "key": "CONFIG_PC1640_NVR_RAMDISK_SIZE",
+        "label": "PC1640 NVR RAM disk size byte",
+        "type": "hex",
+        "default": 0x00,
+        "min": 0x00,
+        "max": 0xFF,
     },
     {"section": "POST"},
     {
@@ -537,6 +633,11 @@ def normalize_config(config):
         if config[key] not in choices:
             config[key] = OPTION_BY_KEY[key]["default"]
 
+    if config["CONFIG_XTIDE_ENABLED"] or config["CONFIG_HD_BOOT_ENABLED"]:
+        config["CONFIG_HD_BOOT_ENABLED"] = True
+    elif not config["CONFIG_HAS_FLOPPY_CONTROLLER"] or drive_count(config) == 0:
+        config["CONFIG_HD_BOOT_ENABLED"] = True
+
     return config
 
 
@@ -642,7 +743,6 @@ def sync_header(config, path):
         ("BIOS_CFG_FLOPPY_ENABLE_AH08_COMPAT", "1" if config["CONFIG_FLOPPY_ENABLE_AH08_COMPAT"] else "0"),
         ("BIOS_CFG_XTIDE_ENABLED", "1" if config["CONFIG_XTIDE_ENABLED"] else "0"),
         ("BIOS_CFG_XTIDE_BASE", format_value(OPTION_BY_KEY["CONFIG_XTIDE_BASE"], config["CONFIG_XTIDE_BASE"])),
-        ("BIOS_CFG_XTIDE_BOOT_ENABLED", "1" if config["CONFIG_XTIDE_BOOT_ENABLED"] else "0"),
         ("BIOS_CFG_XTIDE_PROBE_MASTER", "1" if config["CONFIG_XTIDE_PROBE_MASTER"] else "0"),
         ("BIOS_CFG_XTIDE_PROBE_SLAVE", "1" if config["CONFIG_XTIDE_PROBE_SLAVE"] else "0"),
         ("BIOS_CFG_XTIDE_PREFER_LBA", "1" if config["CONFIG_XTIDE_PREFER_LBA"] else "0"),
@@ -651,6 +751,10 @@ def sync_header(config, path):
         ("BIOS_CFG_XTIDE_POLL_LOOPS", str(config["CONFIG_XTIDE_POLL_LOOPS"])),
         ("BIOS_CFG_XTIDE_EDD_ENABLED", "1" if config["CONFIG_XTIDE_EDD_ENABLED"] else "0"),
         ("BIOS_CFG_XTIDE_EDD_MAX_BLOCKS", str(config["CONFIG_XTIDE_EDD_MAX_BLOCKS"])),
+        ("BIOS_CFG_HD_BOOT_ENABLED", "1" if config["CONFIG_HD_BOOT_ENABLED"] else "0"),
+        ("BIOS_CFG_EMS_ENABLED", "1" if config["CONFIG_EMS_ENABLED"] else "0"),
+        ("BIOS_CFG_EMS_IO_BASE", format_value(OPTION_BY_KEY["CONFIG_EMS_IO_BASE"], config["CONFIG_EMS_IO_BASE"])),
+        ("BIOS_CFG_EMS_FRAME_SEGMENT", format_value(OPTION_BY_KEY["CONFIG_EMS_FRAME_SEGMENT"], config["CONFIG_EMS_FRAME_SEGMENT"])),
         ("BIOS_CFG_ROS_RELEASE", str(config["CONFIG_ROS_RELEASE"])),
         ("BIOS_CFG_ROS_ISSUE", str(config["CONFIG_ROS_ISSUE"])),
         ("BIOS_CFG_UART_INIT", format_value(OPTION_BY_KEY["CONFIG_UART_INIT"], config["CONFIG_UART_INIT"])),
@@ -661,6 +765,15 @@ def sync_header(config, path):
         ("BIOS_CFG_RTC_DEFAULT_MONTH", str(config["CONFIG_RTC_DEFAULT_MONTH"])),
         ("BIOS_CFG_RTC_DEFAULT_YEAR", str(config["CONFIG_RTC_DEFAULT_YEAR"])),
         ("BIOS_CFG_RTC_DEFAULT_CENTURY", str(config["CONFIG_RTC_DEFAULT_CENTURY"])),
+        ("BIOS_CFG_PC1640_NVR_ENTER_TOKEN", format_value(OPTION_BY_KEY["CONFIG_PC1640_NVR_ENTER_TOKEN"], config["CONFIG_PC1640_NVR_ENTER_TOKEN"])),
+        ("BIOS_CFG_PC1640_NVR_DELETE_TOKEN", format_value(OPTION_BY_KEY["CONFIG_PC1640_NVR_DELETE_TOKEN"], config["CONFIG_PC1640_NVR_DELETE_TOKEN"])),
+        ("BIOS_CFG_PC1640_NVR_JOYSTICK1_TOKEN", format_value(OPTION_BY_KEY["CONFIG_PC1640_NVR_JOYSTICK1_TOKEN"], config["CONFIG_PC1640_NVR_JOYSTICK1_TOKEN"])),
+        ("BIOS_CFG_PC1640_NVR_JOYSTICK2_TOKEN", format_value(OPTION_BY_KEY["CONFIG_PC1640_NVR_JOYSTICK2_TOKEN"], config["CONFIG_PC1640_NVR_JOYSTICK2_TOKEN"])),
+        ("BIOS_CFG_PC1640_NVR_MOUSE1_TOKEN", format_value(OPTION_BY_KEY["CONFIG_PC1640_NVR_MOUSE1_TOKEN"], config["CONFIG_PC1640_NVR_MOUSE1_TOKEN"])),
+        ("BIOS_CFG_PC1640_NVR_MOUSE2_TOKEN", format_value(OPTION_BY_KEY["CONFIG_PC1640_NVR_MOUSE2_TOKEN"], config["CONFIG_PC1640_NVR_MOUSE2_TOKEN"])),
+        ("BIOS_CFG_PC1640_NVR_MOUSE_X_SCALE", str(config["CONFIG_PC1640_NVR_MOUSE_X_SCALE"])),
+        ("BIOS_CFG_PC1640_NVR_MOUSE_Y_SCALE", str(config["CONFIG_PC1640_NVR_MOUSE_Y_SCALE"])),
+        ("BIOS_CFG_PC1640_NVR_RAMDISK_SIZE", format_value(OPTION_BY_KEY["CONFIG_PC1640_NVR_RAMDISK_SIZE"], config["CONFIG_PC1640_NVR_RAMDISK_SIZE"])),
         ("BIOS_CFG_POST_PRETTY_WAIT_PANEL", "1" if config["CONFIG_POST_PRETTY_WAIT_PANEL"] else "0"),
         ("BIOS_CFG_POST_SPACE_INVADERS_SOUND", "1" if config["CONFIG_POST_SPACE_INVADERS_SOUND"] else "0"),
     ]

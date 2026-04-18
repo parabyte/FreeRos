@@ -1,3 +1,8 @@
+/* ================================================
+ * FreeRos BIOS
+ * config.h: Build configuration (auto-generated)
+ * ================================================ */
+
 #ifndef NEW_BIOS_CONFIG_H
 #define NEW_BIOS_CONFIG_H
 
@@ -16,16 +21,38 @@
  */
 
 /* Machine identity and core memory. */
+#define BIOS_CFG_TARGET_PC1640DD 1
 #define BIOS_CFG_MACHINE_NAME "FreeRos PC1640 Compatible BIOS"
 #define BIOS_CFG_BIOS_BRAND "FreeRos"
 #define BIOS_CFG_BIOS_STYLE_NAME "PC1640-Compatible System BIOS"
 #define BIOS_CFG_WEBSITE "www.xt-emporium.com"
-#define BIOS_CFG_BASE_MEMORY_KB 608
+#define BIOS_CFG_BASE_MEMORY_KB 640
+#define BIOS_CFG_ROM_ENTRY_SEGMENT 0xFC00
+#define BIOS_CFG_ROM_IMAGE_SIZE 0x4000
+#define BIOS_CFG_EXECUTE_IN_PLACE 1
+#define BIOS_CFG_RUNTIME_SEGMENT BIOS_CFG_ROM_ENTRY_SEGMENT
+#define BIOS_CFG_STACK_SEGMENT 0x0030
+#define BIOS_CFG_STACK_OFFSET 0x0100
 /* Integrated machine devices present on the stock board. */
 #define BIOS_CFG_HAS_PARADISE_PEGA1A 1
 #define BIOS_CFG_HAS_AMSTRAD_MOUSE 1
 #define BIOS_CFG_HAS_BATTERY_BACKED_RTC 1
 #define BIOS_CFG_HAS_MATH_COPROCESSOR 0
+#define BIOS_CFG_HAS_DMA_CONTROLLER 1
+#define BIOS_CFG_POST_ROS_CHECKSUM_TEST_ENABLED 1
+#define BIOS_CFG_POST_VIDEO_MEMORY_TEST_ENABLED 1
+#define BIOS_CFG_POST_DMA_TEST_ENABLED 1
+#define BIOS_CFG_POST_TIMER_TEST_ENABLED 1
+#define BIOS_CFG_POST_SYSTEM_STATUS_TEST_ENABLED 1
+#define BIOS_CFG_POST_RTC_TEST_ENABLED 1
+#define BIOS_CFG_POST_SERIAL_TEST_ENABLED 0
+#define BIOS_CFG_POST_PRINTER_TEST_ENABLED 0
+#define BIOS_CFG_POST_PIC_TEST_ENABLED 1
+#define BIOS_CFG_POST_FLOPPY_TEST_ENABLED 0
+#define BIOS_CFG_POST_BASE_RAM_DETECT_ENABLED 1
+#define BIOS_CFG_POST_BASE_RAM_TEST_ENABLED 0
+#define BIOS_CFG_POST_KEYBOARD_TEST_ENABLED 1
+#define BIOS_CFG_POST_MOUSE_TEST_ENABLED 0
 
 /* Standard PC1640 peripheral port layout. */
 #define BIOS_CFG_COM1_BASE 0x03F8
@@ -34,9 +61,8 @@
 #define BIOS_CFG_LPT2_BASE 0x03BC
 
 /* Factory strap defaults. */
-#define BIOS_CFG_LANGUAGE BIOS_LANG_ENGLISH
 #define BIOS_CFG_LPT_DIP_LATCH LPT1_STATUS_DIP_LATCH
-#define BIOS_CFG_LPT1_STATUS ((BIOS_CFG_LANGUAGE & LPT1_STATUS_LANGUAGE_MASK)   \
+#define BIOS_CFG_LPT1_STATUS ((BIOS_LANG_ENGLISH & LPT1_STATUS_LANGUAGE_MASK)   \
                               | BIOS_CFG_LPT_DIP_LATCH)
 
 /* Default video state. */
@@ -128,18 +154,77 @@
 #define BIOS_CFG_FLOPPY_SPEC2 0x02
 #define BIOS_CFG_FLOPPY_GAP 0x2A
 
-/* Optional XTIDE-compatible 8-bit ISA IDE support. */
-#define BIOS_CFG_XTIDE_ENABLED 1
+/* Built-in service toggles. */
+#define BIOS_CFG_SERIAL_INT14_ENABLED 1
+#define BIOS_CFG_PRINTER_ENABLED 1
+#define BIOS_CFG_HD_BOOT_ENABLED 1
+
+/* Lo-tech 2MB EMS Board (LIM EMS 3.2 via INT 67h). */
+#define BIOS_CFG_EMS_ENABLED 0
+#define BIOS_CFG_EMS_IO_BASE 0x0260
+#define BIOS_CFG_EMS_FRAME_SEGMENT 0xD000
+
+/* XTIDE Universal BIOS option ROM build configuration.
+ *
+ * External builds track the upstream XT Large profile. The embedded PC1640
+ * path is the XT Tiny exception used only when XTIDE is packed into ROS and
+ * relocated into conventional RAM during POST.
+ */
+#define BIOS_CFG_XTIDE_ENABLED 0
+#define BIOS_CFG_XTIDE_BOOT_ENABLED 0
+#define BIOS_CFG_XTIDE_EMBEDDED_IN_ROS 0
 #define BIOS_CFG_XTIDE_BASE 0x0300
-#define BIOS_CFG_XTIDE_BOOT_ENABLED 1
 #define BIOS_CFG_XTIDE_PROBE_MASTER 1
-#define BIOS_CFG_XTIDE_PROBE_SLAVE 1
+#define BIOS_CFG_XTIDE_PROBE_SLAVE 0
 #define BIOS_CFG_XTIDE_PREFER_LBA 1
-#define BIOS_CFG_XTIDE_TRANSLATED_HEADS 255
-#define BIOS_CFG_XTIDE_TRANSLATED_SECTORS 63
-#define BIOS_CFG_XTIDE_POLL_LOOPS 16384
+#define BIOS_CFG_XTIDE_FULL_MODE BIOS_CFG_XTIDE_EDD_ENABLED
+#define BIOS_CFG_XTIDE_STEAL_SIZE 1
 #define BIOS_CFG_XTIDE_EDD_ENABLED 1
-#define BIOS_CFG_XTIDE_EDD_MAX_BLOCKS 127
+#define BIOS_CFG_XTIDE_COMPATIBLE_TABLES BIOS_CFG_XTIDE_EDD_ENABLED
+#define BIOS_CFG_XTIDE_BOOT_MENU_ENABLED 1
+#define BIOS_CFG_XTIDE_HOTKEYS_ENABLED 1
+#define BIOS_CFG_XTIDE_POWER_MANAGEMENT_ENABLED 1
+#define BIOS_CFG_XTIDE_VERY_LATE_INIT 0
+#define BIOS_CFG_XTIDE_BOOT_DISPLAY_MODE 0x0004
+#define BIOS_CFG_XTIDE_BOOT_TIMEOUT_TICKS 546
+#define BIOS_CFG_XTIDE_BOOT_DRIVE 0x80
+#define BIOS_CFG_XTIDE_MIN_FLOPPY_COUNT 0
+#define BIOS_CFG_XTIDE_CLEAR_BDA_HD_COUNT 0
+#define BIOS_CFG_XTIDE_SERIAL_SCAN_DETECT 0
+#define BIOS_CFG_XTIDE_IDLE_TIMEOUT 0
+#define BIOS_CFG_XTIDE_EDD_MAX_SECTORS 127
+#define BIOS_CFG_XTIDE_TIMEOUT_DRQ 255
+#define BIOS_CFG_XTIDE_TIMEOUT_BSY 47
+#define BIOS_CFG_XTIDE_TIMEOUT_DRDY 47
+#define BIOS_XTIDE_WRITE_CACHE_DEFAULT 0
+#define BIOS_XTIDE_WRITE_CACHE_DISABLE 1
+#define BIOS_XTIDE_WRITE_CACHE_ENABLE 2
+#define BIOS_XTIDE_TRANSLATION_NORMAL 0
+#define BIOS_XTIDE_TRANSLATION_LARGE 1
+#define BIOS_XTIDE_TRANSLATION_ASSISTED_LBA 2
+#define BIOS_XTIDE_TRANSLATION_AUTO 3
+#define BIOS_CFG_XTIDE_MASTER_BLOCK_MODE 1
+#define BIOS_CFG_XTIDE_MASTER_TRANSLATION_MODE                              \
+  (BIOS_CFG_XTIDE_PREFER_LBA ? BIOS_XTIDE_TRANSLATION_AUTO                 \
+                              : BIOS_XTIDE_TRANSLATION_LARGE)
+#define BIOS_CFG_XTIDE_MASTER_WRITE_CACHE BIOS_XTIDE_WRITE_CACHE_DISABLE
+#define BIOS_CFG_XTIDE_MASTER_USER_CHS 0
+#define BIOS_CFG_XTIDE_MASTER_CYLINDERS 1024
+#define BIOS_CFG_XTIDE_MASTER_HEADS 16
+#define BIOS_CFG_XTIDE_MASTER_SECTORS 63
+#define BIOS_CFG_XTIDE_MASTER_USER_LBA 0
+#define BIOS_CFG_XTIDE_MASTER_MAX_LBA 0x0FFFFFFFUL
+#define BIOS_CFG_XTIDE_SLAVE_BLOCK_MODE 1
+#define BIOS_CFG_XTIDE_SLAVE_TRANSLATION_MODE                               \
+  (BIOS_CFG_XTIDE_PREFER_LBA ? BIOS_XTIDE_TRANSLATION_AUTO                 \
+                              : BIOS_XTIDE_TRANSLATION_LARGE)
+#define BIOS_CFG_XTIDE_SLAVE_WRITE_CACHE BIOS_XTIDE_WRITE_CACHE_DISABLE
+#define BIOS_CFG_XTIDE_SLAVE_USER_CHS 0
+#define BIOS_CFG_XTIDE_SLAVE_CYLINDERS 1024
+#define BIOS_CFG_XTIDE_SLAVE_HEADS 16
+#define BIOS_CFG_XTIDE_SLAVE_SECTORS 63
+#define BIOS_CFG_XTIDE_SLAVE_USER_LBA 0
+#define BIOS_CFG_XTIDE_SLAVE_MAX_LBA 0x0FFFFFFFUL
 
 /* RTC power-on defaults. */
 #define BIOS_CFG_ROS_RELEASE 0
@@ -155,7 +240,7 @@
 
 /* Developer/debug routing. These do not describe stock hardware. */
 #ifndef BIOS_CFG_DEBUG_PORT_E9
-#define BIOS_CFG_DEBUG_PORT_E9 0
+#define BIOS_CFG_DEBUG_PORT_E9 1
 #endif
 #ifndef BIOS_CFG_DEBUG_COM1
 #define BIOS_CFG_DEBUG_COM1 0
@@ -169,12 +254,34 @@
 #ifndef BIOS_CFG_TRACE_VIDEO_COM1
 #define BIOS_CFG_TRACE_VIDEO_COM1 0
 #endif
+#ifndef BIOS_CFG_FDC_BOOT_TRACE_E9
+#define BIOS_CFG_FDC_BOOT_TRACE_E9 0
+#endif
+#ifndef BIOS_CFG_POST_VERBOSE_DEBUG
+#define BIOS_CFG_POST_VERBOSE_DEBUG 0
+#endif
 
 /* Cosmetic POST options. */
-#define BIOS_CFG_POST_PRETTY_WAIT_PANEL 1
+
+/* BIOS mode. */
+#define BIOS_CFG_MODE_ELKS 0
+
+/* Initial banner defaults. */
+#define BIOS_CFG_INITIAL_BANNER_ENABLED 0
+#define BIOS_CFG_INITIAL_BANNER_STYLE 1
+#define BIOS_CFG_INITIAL_BANNER_TIMEOUT 2
+
+#define BIOS_CFG_POST_PRETTY_WAIT_PANEL 0
 #define BIOS_CFG_POST_SPACE_INVADERS_SOUND 0
 
 #include "config_autogen.h"
+
+#ifdef VIDEO_PEGA_ROM_BUILD
+#include "video_pega_rom_overrides.h"
+#endif
+#ifndef BIOS_CFG_VIDEO_PEGA_STANDALONE_ROM
+#define BIOS_CFG_VIDEO_PEGA_STANDALONE_ROM 0
+#endif
 
 #if (BIOS_CFG_FLOPPY_TYPE_A != BIOS_FLOPPY_TYPE_NONE                          \
      && BIOS_CFG_FLOPPY_TYPE_A != BIOS_FLOPPY_TYPE_360K_525DD                \
@@ -203,6 +310,24 @@
 #error Drive B cannot be present when drive A is not installed
 #endif
 
+#if BIOS_CFG_TARGET_PC1640DD && BIOS_CFG_POST_PRETTY_WAIT_PANEL
+#error PC1640 fidelity builds must use the plain POST path, not the graphical POST panel
+#endif
+
+#if BIOS_CFG_TARGET_PC1640DD && BIOS_CFG_INITIAL_BANNER_ENABLED
+#error PC1640 fidelity builds must not use the branded banner path
+#endif
+
+#if BIOS_CFG_TARGET_PC1640DD                                              \
+  && (BIOS_CFG_STACK_SEGMENT != 0x0030 || BIOS_CFG_STACK_OFFSET != 0x0100)
+#error PC1640 fidelity builds must use the original 0030:0100 ROS init stack
+#endif
+
+/*
+ * PC1640DD normally carries EMS as a non-motherboard expansion, but this tree
+ * allows INT 67h EMS as an explicit non-stock exception alongside IDE support.
+ */
+
 #if BIOS_CFG_FLOPPY_DRIVES != (((BIOS_CFG_FLOPPY_TYPE_A != BIOS_FLOPPY_TYPE_NONE) ? 1 : 0) \
                                + ((BIOS_CFG_FLOPPY_TYPE_B != BIOS_FLOPPY_TYPE_NONE) ? 1 : 0))
 #error BIOS_CFG_FLOPPY_DRIVES does not match the configured drive types
@@ -213,21 +338,90 @@
 #error BIOS_CFG_XTIDE_BASE must be a 16-byte-aligned XTIDE I/O base
 #endif
 
-#if BIOS_CFG_XTIDE_TRANSLATED_HEADS < 1 || BIOS_CFG_XTIDE_TRANSLATED_HEADS > 255
-#error BIOS_CFG_XTIDE_TRANSLATED_HEADS must be in the range 1..255
+#if BIOS_CFG_XTIDE_ENABLED                                                 \
+  && !BIOS_CFG_XTIDE_PROBE_MASTER                                          \
+  && !BIOS_CFG_XTIDE_PROBE_SLAVE
+#error XTIDE must probe at least one device
 #endif
 
-#if BIOS_CFG_XTIDE_TRANSLATED_SECTORS < 1                               \
-  || BIOS_CFG_XTIDE_TRANSLATED_SECTORS > 63
-#error BIOS_CFG_XTIDE_TRANSLATED_SECTORS must be in the range 1..63
+#if BIOS_CFG_XTIDE_EDD_ENABLED && !BIOS_CFG_XTIDE_FULL_MODE
+#error XTIDE EDD requires BIOS_CFG_XTIDE_FULL_MODE
 #endif
 
-#if BIOS_CFG_XTIDE_POLL_LOOPS < 256
-#error BIOS_CFG_XTIDE_POLL_LOOPS must be at least 256
+#if BIOS_CFG_XTIDE_STEAL_SIZE < 0 || BIOS_CFG_XTIDE_STEAL_SIZE > 255
+#error BIOS_CFG_XTIDE_STEAL_SIZE must be in 0..255
 #endif
 
-#if BIOS_CFG_XTIDE_EDD_MAX_BLOCKS < 1 || BIOS_CFG_XTIDE_EDD_MAX_BLOCKS > 127
-#error BIOS_CFG_XTIDE_EDD_MAX_BLOCKS must be in the range 1..127
+#if BIOS_CFG_XTIDE_MIN_FLOPPY_COUNT < 0 || BIOS_CFG_XTIDE_MIN_FLOPPY_COUNT > 4
+#error BIOS_CFG_XTIDE_MIN_FLOPPY_COUNT must be in 0..4
+#endif
+
+#if BIOS_CFG_XTIDE_IDLE_TIMEOUT < 0 || BIOS_CFG_XTIDE_IDLE_TIMEOUT > 244
+#error BIOS_CFG_XTIDE_IDLE_TIMEOUT must be in 0..244
+#endif
+
+#if BIOS_CFG_XTIDE_EDD_MAX_SECTORS < 1 || BIOS_CFG_XTIDE_EDD_MAX_SECTORS > 127
+#error BIOS_CFG_XTIDE_EDD_MAX_SECTORS must be in 1..127
+#endif
+
+#if BIOS_CFG_XTIDE_TIMEOUT_DRQ < 1 || BIOS_CFG_XTIDE_TIMEOUT_DRQ > 255       \
+  || BIOS_CFG_XTIDE_TIMEOUT_BSY < 1 || BIOS_CFG_XTIDE_TIMEOUT_BSY > 255      \
+  || BIOS_CFG_XTIDE_TIMEOUT_DRDY < 1 || BIOS_CFG_XTIDE_TIMEOUT_DRDY > 255
+#error XTIDE timeout ticks must be in 1..255
+#endif
+
+#if BIOS_CFG_XTIDE_MASTER_TRANSLATION_MODE < BIOS_XTIDE_TRANSLATION_NORMAL    \
+  || BIOS_CFG_XTIDE_MASTER_TRANSLATION_MODE > BIOS_XTIDE_TRANSLATION_AUTO     \
+  || BIOS_CFG_XTIDE_SLAVE_TRANSLATION_MODE < BIOS_XTIDE_TRANSLATION_NORMAL    \
+  || BIOS_CFG_XTIDE_SLAVE_TRANSLATION_MODE > BIOS_XTIDE_TRANSLATION_AUTO
+#error XTIDE translation modes must be in 0..3
+#endif
+
+#if BIOS_CFG_XTIDE_MASTER_WRITE_CACHE < BIOS_XTIDE_WRITE_CACHE_DEFAULT        \
+  || BIOS_CFG_XTIDE_MASTER_WRITE_CACHE > BIOS_XTIDE_WRITE_CACHE_ENABLE        \
+  || BIOS_CFG_XTIDE_SLAVE_WRITE_CACHE < BIOS_XTIDE_WRITE_CACHE_DEFAULT        \
+  || BIOS_CFG_XTIDE_SLAVE_WRITE_CACHE > BIOS_XTIDE_WRITE_CACHE_ENABLE
+#error XTIDE write-cache modes must be in 0..2
+#endif
+
+#if BIOS_CFG_XTIDE_MASTER_USER_CHS && BIOS_CFG_XTIDE_MASTER_USER_LBA
+#error XTIDE master drive cannot force both user CHS and user LBA
+#endif
+
+#if BIOS_CFG_XTIDE_SLAVE_USER_CHS && BIOS_CFG_XTIDE_SLAVE_USER_LBA
+#error XTIDE slave drive cannot force both user CHS and user LBA
+#endif
+
+#if BIOS_CFG_XTIDE_MASTER_USER_CHS                                           \
+  && (BIOS_CFG_XTIDE_MASTER_CYLINDERS < 1                                    \
+      || BIOS_CFG_XTIDE_MASTER_CYLINDERS > 16383                             \
+      || BIOS_CFG_XTIDE_MASTER_HEADS < 1                                     \
+      || BIOS_CFG_XTIDE_MASTER_HEADS > 16                                    \
+      || BIOS_CFG_XTIDE_MASTER_SECTORS < 1                                   \
+      || BIOS_CFG_XTIDE_MASTER_SECTORS > 63)
+#error XTIDE master user CHS must be within the legal XTIDE CHS range
+#endif
+
+#if BIOS_CFG_XTIDE_SLAVE_USER_CHS                                            \
+  && (BIOS_CFG_XTIDE_SLAVE_CYLINDERS < 1                                     \
+      || BIOS_CFG_XTIDE_SLAVE_CYLINDERS > 16383                              \
+      || BIOS_CFG_XTIDE_SLAVE_HEADS < 1                                      \
+      || BIOS_CFG_XTIDE_SLAVE_HEADS > 16                                     \
+      || BIOS_CFG_XTIDE_SLAVE_SECTORS < 1                                    \
+      || BIOS_CFG_XTIDE_SLAVE_SECTORS > 63)
+#error XTIDE slave user CHS must be within the legal XTIDE CHS range
+#endif
+
+#if BIOS_CFG_XTIDE_MASTER_USER_LBA                                           \
+  && (BIOS_CFG_XTIDE_MASTER_MAX_LBA < 1                                      \
+      || BIOS_CFG_XTIDE_MASTER_MAX_LBA > 0x0FFFFFFFUL)
+#error XTIDE master user LBA must be in 1..0x0FFFFFFF
+#endif
+
+#if BIOS_CFG_XTIDE_SLAVE_USER_LBA                                            \
+  && (BIOS_CFG_XTIDE_SLAVE_MAX_LBA < 1                                       \
+      || BIOS_CFG_XTIDE_SLAVE_MAX_LBA > 0x0FFFFFFFUL)
+#error XTIDE slave user LBA must be in 1..0x0FFFFFFF
 #endif
 
 #endif

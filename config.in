@@ -5,25 +5,55 @@
 mainmenu_name "FreeRos BIOS Configuration"
 
 mainmenu_option next_comment
+	comment 'Machine Target'
+	comment 'This tree builds the Amstrad PC1640DD motherboard ROS only.'
+	comment 'Machine target selection is fixed and not user-configurable.'
+define_bool CONFIG_TARGET_PC1640DD y
+
+endmenu
+
+mainmenu_option next_comment
 	comment 'Machine Identity'
 
-	string 'Machine name' CONFIG_MACHINE_NAME 'FreeRos PC1640 Compatible BIOS'
-	string 'BIOS brand' CONFIG_BIOS_BRAND 'FreeRos'
-	string 'BIOS style name' CONFIG_BIOS_STYLE_NAME 'PC1640-Compatible System BIOS'
-	string 'Website' CONFIG_WEBSITE 'www.xt-emporium.com'
-	int 'ROS release number' CONFIG_ROS_RELEASE 0 0 255
-	int 'ROS issue number' CONFIG_ROS_ISSUE 2 0 255
+	string 'Machine name (shown in POST display)' CONFIG_MACHINE_NAME 'FreeRos PC1640 Compatible BIOS'
+	string 'BIOS brand (header bar label)' CONFIG_BIOS_BRAND 'FreeRos'
+	string 'BIOS style name (INT 15h identity)' CONFIG_BIOS_STYLE_NAME 'PC1640-Compatible System BIOS'
+	string 'Website URL (shown in POST display)' CONFIG_WEBSITE 'www.xt-emporium.com'
+	int 'ROS release number (0-255)' CONFIG_ROS_RELEASE 0 0 255
+	int 'ROS issue number (0-255)' CONFIG_ROS_ISSUE 2 0 255
 
 endmenu
 
 mainmenu_option next_comment
 	comment 'Hardware'
 
-	int 'Base memory (KB)' CONFIG_BASE_MEMORY_KB 608 256 640
-	bool 'Paradise PEGA1A video' CONFIG_HAS_PARADISE_PEGA1A y
-	bool 'Amstrad mouse port' CONFIG_HAS_AMSTRAD_MOUSE y
-	bool 'Battery-backed RTC' CONFIG_HAS_BATTERY_BACKED_RTC y
-	bool 'Math coprocessor (8087)' CONFIG_HAS_MATH_COPROCESSOR n
+	int 'Base conventional memory (KB, 256-640)' CONFIG_BASE_MEMORY_KB 640 256 640
+	bool 'Math coprocessor socket (8087)' CONFIG_HAS_MATH_COPROCESSOR n
+	comment 'Fixed PC1640DD motherboard devices in this tree:'
+	comment '  Paradise PEGA1A integrated video controller'
+	comment '  Amstrad mouse interface'
+	comment '  Battery-backed MC146818 RTC/NVR'
+
+endmenu
+
+mainmenu_option next_comment
+	comment 'Amstrad PC1640 Board'
+
+	comment 'ROS init stack is fixed at 0030:0100 for PC1640 fidelity'
+	comment '======= NVR Keyboard Tokens ======='
+	hex 'Enter key token (scan<<8 | ascii)' CONFIG_PC1640_NVR_ENTER_TOKEN 1C0D
+	hex 'Delete key token (scan<<8 | ascii)' CONFIG_PC1640_NVR_DELETE_TOKEN 2207
+	comment '======= NVR Joystick Tokens ======='
+	hex 'Joystick 1 token' CONFIG_PC1640_NVR_JOYSTICK1_TOKEN FFFF
+	hex 'Joystick 2 token' CONFIG_PC1640_NVR_JOYSTICK2_TOKEN FFFF
+	comment '======= NVR Mouse ======='
+	hex 'Mouse button 1 token' CONFIG_PC1640_NVR_MOUSE1_TOKEN FFFF
+	hex 'Mouse button 2 token' CONFIG_PC1640_NVR_MOUSE2_TOKEN FFFF
+	int 'Mouse X scale byte (0-255)' CONFIG_PC1640_NVR_MOUSE_X_SCALE 10 0 255
+	int 'Mouse Y scale byte (0-255)' CONFIG_PC1640_NVR_MOUSE_Y_SCALE 10 0 255
+	comment '======= NVR System ======='
+	hex 'RAM disk size byte' CONFIG_PC1640_NVR_RAMDISK_SIZE 00
+	comment 'Stock PC1640DD ROS has no on-board LIM EMS (INT 67h); add an EMS option ROM if needed.'
 
 endmenu
 
@@ -40,36 +70,39 @@ endmenu
 mainmenu_option next_comment
 	comment 'Video'
 
-	choice 'Fallback video equipment' \
+	hex 'Default text attribute byte' CONFIG_VIDEO_ATTRIBUTE 07
+
+	choice 'Fallback video equipment (when option ROM not found)' \
 		"EGA_adapter       CONFIG_VIDEO_EGA_ADAPTER \
 		 40x25_color       CONFIG_VIDEO_40X25_COLOR \
 		 80x25_color       CONFIG_VIDEO_80X25_COLOR \
 		 Monochrome        CONFIG_VIDEO_MONO" 80x25_color
 
-	hex 'Default text attribute' CONFIG_VIDEO_ATTRIBUTE 07
-	bool 'Direct text init before PEGA ROM' CONFIG_VIDEO_DIRECT_TEXT_INIT y
-	bool 'Use PC1640 switch block' CONFIG_VIDEO_USE_PC1640_SWITCH_BLOCK y
-	bool 'Query video ROM state' CONFIG_VIDEO_QUERY_ROM_STATE y
-	bool 'Fix up video state from switch block' CONFIG_VIDEO_FIXUP_FROM_SWITCH_BLOCK y
+	bool 'Standalone 32 KiB PEGA video BIOS (C000; burn / 86Box file 40100)' CONFIG_VIDEO_PEGA_STANDALONE_ROM n
+	bool 'In-ROM Paradise PEGA driver (English font; no C000 video BIOS)' CONFIG_VIDEO_PEGA_INROM_DRIVER n
+	comment '(Enabling standalone video ROM disables the in-ROM driver so the 16 KiB ROS fits.)'
+	bool 'Direct text init before PEGA option ROM' CONFIG_VIDEO_DIRECT_TEXT_INIT y
+	bool 'Read PC1640 DIP switch block for video config' CONFIG_VIDEO_USE_PC1640_SWITCH_BLOCK y
+	bool 'Query video option ROM for current state' CONFIG_VIDEO_QUERY_ROM_STATE y
+	bool 'Fix up video state from DIP switch block' CONFIG_VIDEO_FIXUP_FROM_SWITCH_BLOCK y
 
 endmenu
 
 mainmenu_option next_comment
 	comment 'Option ROMs'
 
-	bool 'Scan video option ROMs' CONFIG_VIDEO_OPTION_ROM_SCAN_ENABLED y
-	bool 'Scan non-video option ROMs' CONFIG_OPTION_ROM_SCAN_ENABLED y
+	bool 'Scan for video option ROMs (C000-C800)' CONFIG_VIDEO_OPTION_ROM_SCAN_ENABLED y
+	bool 'Scan for non-video option ROMs (C800-F400)' CONFIG_OPTION_ROM_SCAN_ENABLED y
 
 endmenu
 
 mainmenu_option next_comment
 	comment 'Floppy Disk Controller'
 
-	bool 'Onboard floppy controller' CONFIG_HAS_FLOPPY_CONTROLLER y
-	bool 'Enable 720K 3.5" DD support' CONFIG_FLOPPY_SUPPORT_35DD y
+	bool 'Enable onboard floppy disk controller (disable for XTIDE-only storage)' CONFIG_HAS_FLOPPY_CONTROLLER y
+	bool 'Enable 720K 3.5" DD drive support' CONFIG_FLOPPY_SUPPORT_35DD y
 
 	if [ "$CONFIG_HAS_FLOPPY_CONTROLLER" = "y" ]; then
-
 		if [ "$CONFIG_FLOPPY_SUPPORT_35DD" = "y" ]; then
 			choice 'Drive A type' \
 				"Not_installed   CONFIG_FLOPPY_A_NONE \
@@ -79,7 +112,7 @@ mainmenu_option next_comment
 			choice 'Drive B type' \
 				"Not_installed   CONFIG_FLOPPY_B_NONE \
 				 360K_5.25DD    CONFIG_FLOPPY_B_360K \
-				 720K_3.5DD     CONFIG_FLOPPY_B_720K" Not_installed
+				 720K_3.5DD     CONFIG_FLOPPY_B_720K" 360K_5.25DD
 		else
 			choice 'Drive A type' \
 				"Not_installed   CONFIG_FLOPPY_A_NONE \
@@ -87,62 +120,169 @@ mainmenu_option next_comment
 
 			choice 'Drive B type' \
 				"Not_installed   CONFIG_FLOPPY_B_NONE \
-				 360K_5.25DD    CONFIG_FLOPPY_B_360K" Not_installed
+				 360K_5.25DD    CONFIG_FLOPPY_B_360K" 360K_5.25DD
 		fi
 	fi
 
-	bool 'INT 13h AH=08 compatibility path' CONFIG_FLOPPY_ENABLE_AH08_COMPAT y
+	bool 'INT 13h AH=08h get drive parameters (DOS compatibility)' CONFIG_FLOPPY_ENABLE_AH08_COMPAT y
+
+endmenu
+mainmenu_option next_comment
+	comment 'IDE Hard Disk (XTIDE Universal BIOS Option ROM)'
+
+	comment 'PC1640 fidelity stays stock except for XTIDE support.'
+	comment 'Embedded XTIDE is the supported exception: the 16 KiB ROS can carry a 4 KiB XTIDE image and relocate it into stolen top-of-base RAM before init.'
+
+	bool 'Build XTIDE Universal BIOS option ROM (8-bit ISA IDE)' CONFIG_XTIDE_ENABLED n
+	if [ "$CONFIG_XTIDE_ENABLED" = "y" ]; then
+		comment 'External ROM build is fixed to the upstream XT Large profile (ide_xtl.bin, 10 KiB).'
+		comment 'Embedded ROS build is fixed to the upstream XT Tiny profile (ide_tiny.bin, 4 KiB) so the PC1640DD exception still fits.'
+		bool 'Embed zlib-compressed XTIDE in motherboard ROS and relocate to RAM' CONFIG_XTIDE_EMBEDDED_IN_ROS n
+		hex 'IDE controller base I/O address' CONFIG_XTIDE_BASE 0300
+		bool 'Full mode (steal low RAM, enable full XTIDE runtime)' CONFIG_XTIDE_FULL_MODE y
+		int 'KiB of base RAM stolen by XTIDE in full mode' CONFIG_XTIDE_STEAL_SIZE 1 0 255
+		if [ "$CONFIG_XTIDE_EMBEDDED_IN_ROS" = "y" ]; then
+			comment 'Embedded XT Tiny keeps EDD, compatible tables, hotkeys, boot menu, and power management out to stay within the 4 KiB resident limit.'
+		else
+			comment 'External XT Large keeps the upstream XT module set: EDD, compatible tables, hotkeys, boot menu, power management, serial/serial-floppy support, and 8-bit IDE advanced support.'
+		fi
+		comment 'XTIDE display/boot values use native XTIDE ROM encodings.'
+		hex 'Boot display mode byte (00/01/02/03/04/07 etc.)' CONFIG_XTIDE_BOOT_DISPLAY_MODE 0004
+		int 'Boot timeout in BIOS timer ticks (18.2 Hz)' CONFIG_XTIDE_BOOT_TIMEOUT_TICKS 546 0 65535
+		hex 'Default boot drive (hex, usually 80)' CONFIG_XTIDE_BOOT_DRIVE 80
+		int 'Minimum floppy count reported by XTIDE' CONFIG_XTIDE_MIN_FLOPPY_COUNT 0 0 4
+		bool 'Clear BDA hard-disk count before XTIDE drive detect' CONFIG_XTIDE_CLEAR_BDA_HD_COUNT n
+		bool 'Allow ALT-triggered serial scan detect' CONFIG_XTIDE_SERIAL_SCAN_DETECT n
+		int 'Idle timeout byte (0 disables, XTIDE native encoding)' CONFIG_XTIDE_IDLE_TIMEOUT 0 0 244
+		int 'EDD max sectors per request' CONFIG_XTIDE_EDD_MAX_SECTORS 127 1 127
+		int 'DRQ timeout ticks' CONFIG_XTIDE_TIMEOUT_DRQ 255 1 255
+		int 'BSY timeout ticks' CONFIG_XTIDE_TIMEOUT_BSY 47 1 255
+		int 'DRDY timeout ticks' CONFIG_XTIDE_TIMEOUT_DRDY 47 1 255
+		comment 'Drive tuning: write cache 0=default 1=disable 2=enable'
+		comment 'Drive tuning: translation 0=normal 1=large 2=assisted-lba 3=auto'
+		bool 'Probe master device' CONFIG_XTIDE_PROBE_MASTER y
+		bool 'Master block mode transfers' CONFIG_XTIDE_MASTER_BLOCK_MODE y
+		int 'Master translation mode' CONFIG_XTIDE_MASTER_TRANSLATION_MODE 3 0 3
+		int 'Master write cache mode' CONFIG_XTIDE_MASTER_WRITE_CACHE 1 0 2
+		bool 'Master uses forced user CHS values' CONFIG_XTIDE_MASTER_USER_CHS n
+		int 'Master user CHS cylinders' CONFIG_XTIDE_MASTER_CYLINDERS 1024 1 16383
+		int 'Master user CHS heads' CONFIG_XTIDE_MASTER_HEADS 16 1 16
+		int 'Master user CHS sectors/track' CONFIG_XTIDE_MASTER_SECTORS 63 1 63
+		bool 'Master uses forced user LBA limit' CONFIG_XTIDE_MASTER_USER_LBA n
+		hex 'Master user LBA max sector (28-bit)' CONFIG_XTIDE_MASTER_MAX_LBA 0FFFFFFF
+		bool 'Probe slave device' CONFIG_XTIDE_PROBE_SLAVE n
+		bool 'Slave block mode transfers' CONFIG_XTIDE_SLAVE_BLOCK_MODE y
+		int 'Slave translation mode' CONFIG_XTIDE_SLAVE_TRANSLATION_MODE 3 0 3
+		int 'Slave write cache mode' CONFIG_XTIDE_SLAVE_WRITE_CACHE 1 0 2
+		bool 'Slave uses forced user CHS values' CONFIG_XTIDE_SLAVE_USER_CHS n
+		int 'Slave user CHS cylinders' CONFIG_XTIDE_SLAVE_CYLINDERS 1024 1 16383
+		int 'Slave user CHS heads' CONFIG_XTIDE_SLAVE_HEADS 16 1 16
+		int 'Slave user CHS sectors/track' CONFIG_XTIDE_SLAVE_SECTORS 63 1 63
+		bool 'Slave uses forced user LBA limit' CONFIG_XTIDE_SLAVE_USER_LBA n
+		hex 'Slave user LBA max sector (28-bit)' CONFIG_XTIDE_SLAVE_MAX_LBA 0FFFFFFF
+	fi
 
 endmenu
 
 mainmenu_option next_comment
-	comment 'IDE Hard Disk (XTIDE)'
+	comment 'Expanded Memory (Lo-tech 2MB EMS Board)'
 
-	bool 'Built-in XTIDE-compatible IDE support' CONFIG_XTIDE_ENABLED y
-	if [ "$CONFIG_XTIDE_ENABLED" = "y" ]; then
-		hex 'XTIDE base I/O address' CONFIG_XTIDE_BASE 0300
-		bool 'Try XTIDE boot in INT 19h' CONFIG_XTIDE_BOOT_ENABLED y
-		bool 'Probe master device' CONFIG_XTIDE_PROBE_MASTER y
-		bool 'Probe slave device' CONFIG_XTIDE_PROBE_SLAVE n
-		bool 'Prefer LBA28 translation' CONFIG_XTIDE_PREFER_LBA y
-		int 'Reported translated heads' CONFIG_XTIDE_TRANSLATED_HEADS 255 1 255
-		int 'Reported translated sectors/track' CONFIG_XTIDE_TRANSLATED_SECTORS 63 1 63
-		int 'IDE poll loop count' CONFIG_XTIDE_POLL_LOOPS 16384 256 65535
-		bool 'INT 13h extensions (EDD)' CONFIG_XTIDE_EDD_ENABLED y
-		int 'EDD max sectors per request' CONFIG_XTIDE_EDD_MAX_BLOCKS 127 1 127
+	bool 'Enable LIM EMS 3.2 driver (INT 67h)' CONFIG_EMS_ENABLED n
+	if [ "$CONFIG_EMS_ENABLED" = "y" ]; then
+		hex 'EMS board base I/O address' CONFIG_EMS_IO_BASE 0260
+		hex 'EMS page frame segment' CONFIG_EMS_FRAME_SEGMENT D000
 	fi
+
+endmenu
+
+mainmenu_option next_comment
+	comment 'Boot Order'
+
+	if [ "$CONFIG_XTIDE_ENABLED" = "y" ]; then
+		comment 'XTIDE on: INT 19h always tries drive 80h after init (embedded RAM-resident or external C800 ROM)'
+	else
+		comment 'With no floppy drive configured, hard-disk boot is enabled automatically'
+		bool 'Try hard disk boot (INT 19h drive 80h; option ROM or motherboard XTIDE)' CONFIG_HD_BOOT_ENABLED n
+	fi
+
+endmenu
+
+mainmenu_option next_comment
+	comment 'Interrupt Services'
+
+	bool 'INT 14h serial port BIOS service' CONFIG_SERIAL_INT14_ENABLED n
+	bool 'INT 17h printer and INT 05h print screen service' CONFIG_PRINTER_ENABLED n
 
 endmenu
 
 mainmenu_option next_comment
 	comment 'Real Time Clock Defaults'
 
-	hex 'UART init byte' CONFIG_UART_INIT E3
-	int 'Default RTC seconds' CONFIG_RTC_DEFAULT_SECONDS 0 0 59
-	int 'Default RTC minutes' CONFIG_RTC_DEFAULT_MINUTES 0 0 59
-	int 'Default RTC hours' CONFIG_RTC_DEFAULT_HOURS 0 0 23
-	int 'Default RTC day of month' CONFIG_RTC_DEFAULT_DAY_OF_MONTH 1 1 31
-	int 'Default RTC month' CONFIG_RTC_DEFAULT_MONTH 1 1 12
-	int 'Default RTC year (2-digit)' CONFIG_RTC_DEFAULT_YEAR 88 0 99
-	int 'Default RTC century' CONFIG_RTC_DEFAULT_CENTURY 19 0 99
+	hex 'UART init byte (baud/parity/stop/word)' CONFIG_UART_INIT E3
+
+	int 'Default seconds (0-59)' CONFIG_RTC_DEFAULT_SECONDS 0 0 59
+	int 'Default minutes (0-59)' CONFIG_RTC_DEFAULT_MINUTES 0 0 59
+	int 'Default hours (0-23)' CONFIG_RTC_DEFAULT_HOURS 0 0 23
+	int 'Default day of month (1-31)' CONFIG_RTC_DEFAULT_DAY_OF_MONTH 1 1 31
+	int 'Default month (1-12)' CONFIG_RTC_DEFAULT_MONTH 1 1 12
+	int 'Default year, 2-digit (0-99)' CONFIG_RTC_DEFAULT_YEAR 88 0 99
+	int 'Default century (0-99)' CONFIG_RTC_DEFAULT_CENTURY 19 0 99
 
 endmenu
 
 mainmenu_option next_comment
-	comment 'POST Options'
+	comment 'ROM Build Options'
 
-	bool 'Pretty wait panel' CONFIG_POST_PRETTY_WAIT_PANEL y
-	bool 'Space Invaders speaker effect' CONFIG_POST_SPACE_INVADERS_SOUND n
+
+endmenu
+
+mainmenu_option next_comment
+	comment 'POST Checks'
+
+	comment 'Defaults keep the current test matrix unchanged for the active build.'
+	bool 'Verify motherboard ROM checksum during POST' CONFIG_POST_ROS_CHECKSUM_TEST_ENABLED y
+	bool 'Test motherboard video RAM during POST' CONFIG_POST_VIDEO_MEMORY_TEST_ENABLED y
+	bool 'Test DMA controller registers during POST' CONFIG_POST_DMA_TEST_ENABLED y
+	bool 'Test PIT channel 2 / speaker gate during POST' CONFIG_POST_TIMER_TEST_ENABLED y
+	bool 'Test system status latch path during POST' CONFIG_POST_SYSTEM_STATUS_TEST_ENABLED y
+	bool 'Test RTC and NVR access during POST' CONFIG_POST_RTC_TEST_ENABLED y
+
+	bool 'Test COM1 loopback during POST' CONFIG_POST_SERIAL_TEST_ENABLED y
+	bool 'Test LPT1 data path during POST' CONFIG_POST_PRINTER_TEST_ENABLED y
+	bool 'Test motherboard PIC register path during POST' CONFIG_POST_PIC_TEST_ENABLED y
+	bool 'Test floppy controller during POST' CONFIG_POST_FLOPPY_TEST_ENABLED y
+	bool 'Detect base RAM during POST' CONFIG_POST_BASE_RAM_DETECT_ENABLED y
+	bool 'Run destructive base RAM test during POST' CONFIG_POST_BASE_RAM_TEST_ENABLED y
+	bool 'Test keyboard BAT during POST' CONFIG_POST_KEYBOARD_TEST_ENABLED y
+	bool 'Test mouse hardware during POST' CONFIG_POST_MOUSE_TEST_ENABLED y
+
+endmenu
+
+mainmenu_option next_comment
+	comment 'BIOS Mode'
+
+	choice 'Operating mode' \
+		"Normal_XT          CONFIG_MODE_NORMAL_XT \
+		 ELKS_Linux         CONFIG_MODE_ELKS" Normal_XT
+
+endmenu
+
+mainmenu_option next_comment
+	comment 'POST Display'
+
+	if [ "$CONFIG_MODE_ELKS" != "y" ]; then
+		bool 'Space Invaders speaker effect on cold boot' CONFIG_POST_SPACE_INVADERS_SOUND n
+	fi
 
 endmenu
 
 mainmenu_option next_comment
 	comment 'Debug'
 
-	bool 'Route debug output to port E9' CONFIG_DEBUG_PORT_E9 n
-	bool 'Route debug output to COM1' CONFIG_DEBUG_COM1 n
-	bool 'Trace video state changes' CONFIG_DEBUG_VIDEO_STATE n
-	bool 'Enable video overlay debug' CONFIG_DEBUG_VIDEO_OVERLAY n
+	bool 'Route debug output to port E9 (emulator debug)' CONFIG_DEBUG_PORT_E9 n
+	bool 'Route debug output to COM1 (serial console)' CONFIG_DEBUG_COM1 n
+	bool 'Trace video state changes to debug output' CONFIG_DEBUG_VIDEO_STATE n
+	bool 'Enable video overlay debug panel' CONFIG_DEBUG_VIDEO_OVERLAY n
 	bool 'Mirror video trace to COM1' CONFIG_TRACE_VIDEO_COM1 n
 
 endmenu

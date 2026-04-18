@@ -21,16 +21,6 @@ CONFIG_BASE_MEMORY_KB
   The PC1640 originally shipped with 640 KB, but some boards
   may have 608 KB (reserving top 32 KB for EMS).
 
-CONFIG_HAS_PARADISE_PEGA1A
-  Enable support for the onboard Paradise PEGA1A EGA controller
-  found in the Amstrad PC1640.
-
-CONFIG_HAS_AMSTRAD_MOUSE
-  Enable support for the Amstrad-specific mouse interface.
-
-CONFIG_HAS_BATTERY_BACKED_RTC
-  Enable battery-backed real time clock support.
-
 CONFIG_HAS_MATH_COPROCESSOR
   Report that an 8087 math coprocessor is installed.
 
@@ -65,6 +55,16 @@ CONFIG_VIDEO_MONO
 CONFIG_VIDEO_ATTRIBUTE
   Default text attribute byte for POST display (hex).
   0x07 = normal white-on-black.
+
+CONFIG_VIDEO_PEGA_STANDALONE_ROM
+  Build the separate 32 KiB PEGA video ROM image for the normal PC1640
+  C000h socket. Use this when you want the motherboard ROS to behave like a
+  stock machine with a distinct video BIOS image.
+
+CONFIG_VIDEO_PEGA_INROM_DRIVER
+  Build the minimal PEGA text-mode INT 10h path directly into the 16 KiB ROS
+  instead of relying on a separate C000h video ROM. This is mainly for
+  constrained ROM experiments; stock-compatible setups normally leave it off.
 
 CONFIG_VIDEO_DIRECT_TEXT_INIT
   Perform direct text mode initialization before the PEGA option ROM
@@ -116,49 +116,115 @@ CONFIG_FLOPPY_ENABLE_AH08_COMPAT
   Enable the INT 13h AH=08h (get drive parameters) compatibility
   path. Required by some DOS versions.
 
+CONFIG_EMS_ENABLED
+  Enable the built-in LIM EMS 3.2 driver for the Lo-tech 2MB EMS
+  Board (or compatible). Provides INT 67h expanded memory services
+  with 128 pages (2 MiB) through a 64 KiB page frame.
+  On the PC1640DD profile this is a deliberate non-stock exception.
+
+CONFIG_EMS_IO_BASE
+  Base I/O address for the Lo-tech EMS board page registers.
+  The four consecutive ports (base+0..base+3) each control one
+  16 KiB window in the page frame. Default: 0x0260.
+
+CONFIG_EMS_FRAME_SEGMENT
+  Segment address of the 64 KiB EMS page frame. Must not overlap
+  with video memory, option ROMs, or the system BIOS area.
+  Default: 0xD000 (physical D0000-DFFFF).
+
+CONFIG_SERIAL_INT14_ENABLED
+  Provide BIOS INT 14h RS-232 services. Disabling removes src/serial.c
+  from the link (~400 bytes) and frees ROS space for other features.
+
+CONFIG_PRINTER_ENABLED
+  Provide INT 17h printer, IRQ7, and INT 05h print-screen handling.
+  Disabling removes src/printer.c from the link (~800 bytes).
+
 CONFIG_XTIDE_ENABLED
-  Enable built-in IDE hard disk support compatible with XTIDE ISA
-  adapters. This provides INT 13h services for ATA hard drives
-  connected via an 8-bit ISA IDE controller at the configured
-  I/O base address.
+  Build the XTIDE Universal BIOS for 8-bit ISA IDE. Produces
+  build/ide_xtl.bin for the C800 option-ROM window using the upstream
+  XT Large module set. The motherboard ROS stays separate unless you
+  also enable CONFIG_XTIDE_EMBEDDED_IN_ROS.
+
+CONFIG_XTIDE_EMBEDDED_IN_ROS
+  Pack zlib-compressed XTIDE into the 16 KiB motherboard ROM image with
+  a small decompressor. The embedded exception uses build/ide_tiny.bin
+  internally because larger XTIDE profiles do not fit the PC1640DD ROS.
+  Prefer the external ide_xt.bin default unless you have trimmed other
+  features and verified a larger profile in your emulator or target.
 
 CONFIG_XTIDE_BASE
   I/O base address for the XTIDE IDE controller.
   Common values: 0x0300, 0x0320, 0x0340.
 
-CONFIG_XTIDE_BOOT_ENABLED
-  Allow the INT 19h bootstrap loader to attempt booting from
-  the IDE hard drive after floppy boot fails.
+CONFIG_XTIDE_FULL_MODE
+  Enable XTIDE full mode. This allows XTIDE to steal a small amount
+  of base RAM for runtime data structures and enables features such
+  as EDD and compatible DPT tables. PC1640DD external XTIDE builds are
+  currently forced to lite mode because 86Box's PC/XT XTIDE path can
+  hang in BSY polling with the advanced/full-mode profile.
 
-CONFIG_XTIDE_PROBE_MASTER
-  Probe for an IDE master device (drive 0) during POST.
+CONFIG_XTIDE_STEAL_SIZE
+  Number of KiB of conventional memory XTIDE may reserve in full
+  mode. The stock XTIDE default is 1 KiB.
 
-CONFIG_XTIDE_PROBE_SLAVE
-  Probe for an IDE slave device (drive 1) during POST.
+XTIDE profile notes
+  PC1640DD external builds default to the smaller ide_xt.bin profile
+  (8 KiB, lite mode, no EDD/compatible-table extras) because it is the
+  profile that currently boots reliably in 86Box. The tree still also
+  emits ide_xtl.bin as a larger alternate build artifact. Embedded XTIDE
+  builds are fixed to the upstream XT Tiny profile so the motherboard ROS
+  can still carry and relocate it.
 
-CONFIG_XTIDE_PREFER_LBA
-  Use LBA28 addressing with translated CHS geometry when the
-  drive supports LBA. If disabled, native CHS is used.
+CONFIG_XTIDE_BOOT_DISPLAY_MODE
+  Raw XTIDE display mode byte used by the option ROM before its boot
+  menu or hotkey UI runs. Common values: 0x04 (default text), 0x07
+  (mono), 0x02 or 0x03 (80-column CGA).
 
-CONFIG_XTIDE_TRANSLATED_HEADS
-  Number of heads to report in translated CHS geometry (1-255).
-  255 is typical for LBA translation.
+CONFIG_XTIDE_BOOT_TIMEOUT_TICKS
+  XTIDE boot-menu timeout in BIOS timer ticks (18.2 Hz).
 
-CONFIG_XTIDE_TRANSLATED_SECTORS
-  Number of sectors per track in translated CHS geometry (1-63).
-  63 is typical for LBA translation.
+CONFIG_XTIDE_BOOT_DRIVE
+  XTIDE default boot drive number, typically 0x80 for the first hard
+  disk.
 
-CONFIG_XTIDE_POLL_LOOPS
-  Number of polling iterations to wait for IDE status changes.
-  Higher values increase timeout tolerance but slow detection
-  of absent hardware. Minimum 256.
+CONFIG_XTIDE_MIN_FLOPPY_COUNT
+  Minimum floppy count reported by XTIDE's boot helpers.
 
-CONFIG_XTIDE_EDD_ENABLED
-  Enable INT 13h extensions (Enhanced Disk Drive services) for
-  LBA access. Required by modern operating systems.
+CONFIG_XTIDE_CLEAR_BDA_HD_COUNT
+  Clear the BIOS Data Area hard-disk count before XTIDE drive
+  detection. Some machines require this, but it is not the default.
 
-CONFIG_XTIDE_EDD_MAX_BLOCKS
-  Maximum number of sectors per EDD read/write request (1-127).
+CONFIG_XTIDE_SERIAL_SCAN_DETECT
+  Allow XTIDE serial scan detect, including the ALT-key trigger used
+  by upstream XTIDE.
+
+CONFIG_XTIDE_IDLE_TIMEOUT
+  Raw XTIDE standby timeout byte. Zero disables it; other values use
+  XTIDE's native encoding.
+
+CONFIG_XTIDE_EDD_MAX_SECTORS
+  Maximum sectors per XTIDE EDD request. Upstream XTIDE defaults to
+  127 sectors.
+
+CONFIG_XTIDE_TIMEOUT_DRQ / CONFIG_XTIDE_TIMEOUT_BSY / CONFIG_XTIDE_TIMEOUT_DRDY
+  Raw XTIDE polling timeout values in BIOS timer ticks. These replace
+  the old custom-driver poll-loop tuning with XTIDE-native timings.
+
+CONFIG_XTIDE_MASTER_* / CONFIG_XTIDE_SLAVE_*
+  Per-drive XTIDE settings for probe enable, block mode, translation
+  mode, write-cache policy, forced CHS geometry, and forced LBA cap.
+  Translation mode encoding is 0=normal, 1=large, 2=assisted-LBA,
+  3=auto. Write-cache encoding is 0=default, 1=disable, 2=enable.
+
+CONFIG_HD_BOOT_ENABLED
+  Enable the INT 19h hard-disk boot attempt for drive 80h after any
+  floppy boot attempts. When CONFIG_XTIDE_ENABLED is set, hard-disk
+  boot is always compiled in. When the onboard floppy controller is
+  disabled or both drives are "Not installed", hard-disk boot is
+  enabled automatically even if this option is off (there is no
+  other boot device). The BIOS does not require BDA drive count to
+  be non-zero before trying 80h so XTIDE can answer INT 13h first.
 
 CONFIG_UART_INIT
   UART initialization byte written during serial port setup.
@@ -185,6 +251,57 @@ CONFIG_RTC_DEFAULT_YEAR
 CONFIG_RTC_DEFAULT_CENTURY
   Default RTC century used when battery is dead (19 or 20).
 
+CONFIG_POST_SYSTEM_STATUS_TEST_ENABLED
+  Exercise the PC1640 motherboard status latch path during POST. This checks
+  the machine-specific ports used for board status, video strap reporting,
+  and related ROS diagnostics.
+
+CONFIG_POST_RTC_TEST_ENABLED
+  Exercise RTC and NVR access during POST. Keep this enabled for fidelity if
+  you expect the MC146818-compatible clock and the PC1640 NVR defaults to
+  match the original firmware path.
+
+CONFIG_POST_KEYBOARD_TEST_ENABLED
+  Run the late-POST keyboard BAT check and clear the BIOS keyboard buffer
+  before handing control to DOS.
+
+CONFIG_POST_MOUSE_TEST_ENABLED
+  Probe the PC1640 motherboard mouse interface during POST. This tests the
+  port path only; it does not require a mouse to be actively used at boot.
+
+CONFIG_MODE_ELKS
+  Switch the BIOS into the alternate ELKS-oriented operating mode. Normal
+  PC1640-compatible DOS and POST behavior should leave this disabled.
+
+CONFIG_PC1640_NVR_ENTER_TOKEN
+  Default Amstrad PC1640 NVR token returned for the Enter key.
+  Format: scan-code in the high byte, ASCII code in the low byte.
+
+CONFIG_PC1640_NVR_DELETE_TOKEN
+  Default Amstrad PC1640 NVR token returned for the Delete key.
+  Format: scan-code in the high byte, ASCII code in the low byte.
+
+CONFIG_PC1640_NVR_JOYSTICK1_TOKEN
+  Default Amstrad PC1640 NVR token assigned to joystick button 1.
+
+CONFIG_PC1640_NVR_JOYSTICK2_TOKEN
+  Default Amstrad PC1640 NVR token assigned to joystick button 2.
+
+CONFIG_PC1640_NVR_MOUSE1_TOKEN
+  Default Amstrad PC1640 NVR token assigned to mouse button 1.
+
+CONFIG_PC1640_NVR_MOUSE2_TOKEN
+  Default Amstrad PC1640 NVR token assigned to mouse button 2.
+
+CONFIG_PC1640_NVR_MOUSE_X_SCALE
+  Default Amstrad PC1640 NVR mouse X scale byte (0-255).
+
+CONFIG_PC1640_NVR_MOUSE_Y_SCALE
+  Default Amstrad PC1640 NVR mouse Y scale byte (0-255).
+
+CONFIG_PC1640_NVR_RAMDISK_SIZE
+  Default Amstrad PC1640 NVR RAM disk size byte.
+
 CONFIG_POST_PRETTY_WAIT_PANEL
   Show a formatted POST progress panel during boot.
 
@@ -206,3 +323,10 @@ CONFIG_DEBUG_VIDEO_OVERLAY
 
 CONFIG_TRACE_VIDEO_COM1
   Mirror video trace output to COM1.
+
+FDC_BOOT_TRACE (Makefile only, not Kconfig)
+  Build with: make FDC_BOOT_TRACE=1
+  Emits compact INT19 / FDC-read checkpoints to I/O port 0xE9. Use a debug
+  build of the emulator if it logs that port, or correlate with FDC I/O in
+  the VM log.  CONFIG_DEBUG_COM1 is not used here (full serial debug overflows
+  the 16 KiB PC1640 ROM image).

@@ -1,10 +1,16 @@
+/* ================================================
+ * FreeRos BIOS
+ * keyboard.c: INT 16h keyboard services and scancode translation
+ * ================================================ */
+
 #include "bios.h"
+#include "machine.h"
 
-/* ----------------------------------------------------------------
-   Scancode-to-ASCII translation tables
-   ---------------------------------------------------------------- */
+/* ================================================
+ * Scancode-to-ASCII Translation Tables
+ * ================================================ */
 
-static const u8 bios_keyboard_ascii_normal[128] = {
+static const u8 bios_keyboard_ascii_normal[0x54] = {
   0, 27, '1', '2', '3', '4', '5', '6',
   '7', '8', '9', '0', '-', '=', '\b', '\t',
   'q', 'w', 'e', 'r', 't', 'y', 'u', 'i',
@@ -15,14 +21,10 @@ static const u8 bios_keyboard_ascii_normal[128] = {
   0, ' ', 0, 0, 0, 0, 0, 0,
   0, 0, 0, 0, 0, 0, 0, '7',
   '8', '9', '-', '4', '5', '6', '+', '1',
-  '2', '3', '0', '.', 0, 0, 0, 0,
-  0, 0, 0, 0, 0, 0, 0, 0,
-  0, 0, 0, 0, 0, 0, 0, 0,
-  0, 0, 0, 0, 0, 0, 0, 0,
-  0, 0, 0, 0, 0, 0, 0, 0
+  '2', '3', '0', '.'
 };
 
-static const u8 bios_keyboard_ascii_shift[128] = {
+static const u8 bios_keyboard_ascii_shift[0x54] = {
   0, 27, '!', '@', '#', '$', '%', '^',
   '&', '*', '(', ')', '_', '+', '\b', '\t',
   'Q', 'W', 'E', 'R', 'T', 'Y', 'U', 'I',
@@ -33,29 +35,87 @@ static const u8 bios_keyboard_ascii_shift[128] = {
   0, ' ', 0, 0, 0, 0, 0, 0,
   0, 0, 0, 0, 0, 0, 0, '7',
   '8', '9', '-', '4', '5', '6', '+', '1',
-  '2', '3', '0', '.', 0, 0, 0, 0,
-  0, 0, 0, 0, 0, 0, 0, 0,
-  0, 0, 0, 0, 0, 0, 0, 0,
-  0, 0, 0, 0, 0, 0, 0, 0,
-  0, 0, 0, 0, 0, 0, 0, 0
+  '2', '3', '0', '.'
 };
 
-/* ----------------------------------------------------------------
-   Keyboard buffer management
-   ---------------------------------------------------------------- */
+/*
+ * Exact PC1640 Alt tokens extracted from the original ROS translation
+ * table at FC00:13E7. Most exact tokens only differ in AH, so keep the
+ * high byte only and let the original special-case entries fall back to
+ * the legacy path. Scancode 39h is the one exact non-zero AL case.
+ */
+static const u8 bios_keyboard_token_alt_hi[0x54] = {
+  0x00, 0x00, 0x78, 0x79, 0x7A, 0x7B, 0x7C, 0x7D,
+  0x7E, 0x7F, 0x80, 0x81, 0x82, 0x83, 0x00, 0x00,
+  0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17,
+  0x18, 0x19, 0x00, 0x00, 0x00, 0x00, 0x1E, 0x1F,
+  0x20, 0x21, 0x22, 0x23, 0x24, 0x25, 0x26, 0x00,
+  0x00, 0x00, 0x00, 0x00, 0x2C, 0x2D, 0x2E, 0x2F,
+  0x30, 0x31, 0x32, 0x00, 0x00, 0x00, 0x00, 0x00,
+  0x00, 0x39, 0x00, 0x68, 0x69, 0x6A, 0x6B, 0x6C,
+  0x6D, 0x6E, 0x6F, 0x70, 0x71, 0x00, 0x00, 0xF7,
+  0xF8, 0xF9, 0x00, 0xF4, 0xF5, 0xF6, 0x00, 0xF1,
+  0xF2, 0xF3, 0xF0, 0x00,
+};
+
+#if BIOS_CFG_DEBUG_PORT_E9 || BIOS_CFG_DEBUG_COM1
+static void
+bios_keyboard_trace_raw (u8 raw_scancode, u8 prefix, u8 flags, u8 flags2)
+{
+  bios_serial_debug_puts ("K raw=");
+  bios_serial_debug_put_hex8 (raw_scancode);
+  bios_serial_debug_puts (" pre=");
+  bios_serial_debug_put_hex8 (prefix);
+  bios_serial_debug_puts (" f=");
+  bios_serial_debug_put_hex8 (flags);
+  bios_serial_debug_puts (" f2=");
+  bios_serial_debug_put_hex8 (flags2);
+  bios_serial_debug_puts ("\n");
+}
+
+static void
+bios_keyboard_trace_token (u8 scancode, u8 prefix, u8 flags, u16 token)
+{
+  bios_serial_debug_puts ("K tok sc=");
+  bios_serial_debug_put_hex8 (scancode);
+  bios_serial_debug_puts (" pre=");
+  bios_serial_debug_put_hex8 (prefix);
+  bios_serial_debug_puts (" f=");
+  bios_serial_debug_put_hex8 (flags);
+  bios_serial_debug_puts (" ax=");
+  bios_serial_debug_put_hex16 (token);
+  bios_serial_debug_puts ("\n");
+}
+#else
+#define bios_keyboard_trace_raw(raw_scancode, prefix, flags, flags2) ((void) 0)
+#define bios_keyboard_trace_token(scancode, prefix, flags, token) ((void) 0)
+#endif
+
+/* ================================================
+ * Keyboard Buffer Management
+ * ================================================ */
 
 static void
 bios_keyboard_put_entry (u16 entry)
 {
   u16 head;
+  u16 start;
   u16 tail;
+  u16 end;
   u16 next_tail;
 
+  start = bios_bda_read16 (BDA_KBD_BUF_START_PTR);
+  end = bios_bda_read16 (BDA_KBD_BUF_END_PTR);
+  if (start == 0 || end <= start)
+    {
+      start = BDA_KBD_BUF_START;
+      end = BDA_KBD_BUF_END;
+    }
   head = bios_bda_read16 (BDA_KBD_BUF_HEAD);
   tail = bios_bda_read16 (BDA_KBD_BUF_TAIL);
   next_tail = (u16) (tail + 2);
-  if (next_tail >= BDA_KBD_BUF_END)
-    next_tail = BDA_KBD_BUF_START;
+  if (next_tail >= end)
+    next_tail = start;
   if (next_tail == head)
     return;
 
@@ -82,9 +142,18 @@ static int
 bios_keyboard_get_entry (u16 *entry)
 {
   u16 head;
+  u16 start;
   u16 tail;
+  u16 end;
   u16 next_head;
 
+  start = bios_bda_read16 (BDA_KBD_BUF_START_PTR);
+  end = bios_bda_read16 (BDA_KBD_BUF_END_PTR);
+  if (start == 0 || end <= start)
+    {
+      start = BDA_KBD_BUF_START;
+      end = BDA_KBD_BUF_END;
+    }
   head = bios_bda_read16 (BDA_KBD_BUF_HEAD);
   tail = bios_bda_read16 (BDA_KBD_BUF_TAIL);
   if (head == tail)
@@ -92,15 +161,15 @@ bios_keyboard_get_entry (u16 *entry)
 
   *entry = bios_bda_read16 (head);
   next_head = (u16) (head + 2);
-  if (next_head >= BDA_KBD_BUF_END)
-    next_head = BDA_KBD_BUF_START;
+  if (next_head >= end)
+    next_head = start;
   bios_bda_write16 (BDA_KBD_BUF_HEAD, next_head);
   return 1;
 }
 
-/* ----------------------------------------------------------------
-   Keyboard flag management
-   ---------------------------------------------------------------- */
+/* ================================================
+ * Keyboard Flag Management
+ * ================================================ */
 
 static u8
 bios_keyboard_flags (void)
@@ -137,9 +206,9 @@ bios_keyboard_toggle_flag (u8 mask)
   bios_keyboard_set_flags ((u8) (bios_keyboard_flags () ^ mask));
 }
 
-/* ----------------------------------------------------------------
-   Character classification and translation helpers
-   ---------------------------------------------------------------- */
+/* ================================================
+ * Character Classification and Translation Helpers
+ * ================================================ */
 
 static int
 bios_keyboard_is_alpha (u8 ascii)
@@ -206,6 +275,14 @@ bios_keyboard_is_keypad_digit (u8 scancode, u8 *digit)
 }
 
 static u8
+bios_keyboard_ascii_lookup (const u8 *table, u8 scancode)
+{
+  if (scancode >= 0x54)
+    return 0;
+  return table[scancode];
+}
+
+static u8
 bios_keyboard_translate_ascii (u8 scancode, u8 prefix)
 {
   u8 flags;
@@ -218,14 +295,14 @@ bios_keyboard_translate_ascii (u8 scancode, u8 prefix)
   if (prefix != 0)
     {
       if (scancode == 0x1C || scancode == 0x35)
-	return bios_keyboard_ascii_normal[scancode];
+	return bios_keyboard_ascii_lookup (bios_keyboard_ascii_normal, scancode);
       return 0;
     }
 
   if ((flags & KBD_FLAG_ALT) != 0)
     return 0;
 
-  ascii = bios_keyboard_ascii_normal[scancode];
+  ascii = bios_keyboard_ascii_lookup (bios_keyboard_ascii_normal, scancode);
 
   if ((flags & KBD_FLAG_CTRL) != 0)
     return bios_keyboard_ctrl_ascii (ascii);
@@ -233,34 +310,108 @@ bios_keyboard_translate_ascii (u8 scancode, u8 prefix)
   if (bios_keyboard_is_alpha (ascii))
     shifted ^= ((flags & KBD_FLAG_CAPS_LOCK) != 0);
 
-  return shifted ? bios_keyboard_ascii_shift[scancode] : ascii;
-}
-
-/* ----------------------------------------------------------------
-   Hardware helpers (CMOS, controller acknowledge)
-   ---------------------------------------------------------------- */
-
-static u8
-bios_keyboard_cmos_read_raw (u8 index)
-{
-  u8 value;
-
-  index &= 0x3F;
-  bios_work_write8 (WK_CMOS_INDEX, index);
-  bios_hw_out8 (index, PORT_CMOS_ADDR);
-  value = bios_hw_in8 (PORT_CMOS_DATA);
-  bios_work_write8 ((u16) (WK_CMOS_SHADOW + index), value);
-  return value;
+  return shifted ? bios_keyboard_ascii_lookup (bios_keyboard_ascii_shift,
+					       scancode) : ascii;
 }
 
 static u16
-bios_keyboard_nvr_token (u8 lo_index)
+bios_keyboard_build_token_exact (u8 scancode, u8 prefix, u8 flags)
+{
+  u8 token_hi;
+
+  if (prefix != 0 || scancode == 0 || scancode >= 0x54)
+    return 0xFFFF;
+
+  if ((flags & KBD_FLAG_ALT) == 0)
+    return 0xFFFF;
+
+  token_hi = bios_keyboard_token_alt_hi[scancode];
+  if (token_hi == 0x00)
+    return 0xFFFF;
+
+  if (scancode == 0x39)
+    return 0x3920;
+
+  return (u16) token_hi << 8;
+}
+
+static u16
+bios_keyboard_build_token_legacy (u8 scancode, u8 prefix, u8 flags)
 {
   u16 token;
 
-  token = bios_keyboard_cmos_read_raw (lo_index);
-  token |= (u16) bios_keyboard_cmos_read_raw ((u8) (lo_index + 1U)) << 8;
+  token = 0xFFFF;
+
+  if (scancode >= 0x3B && scancode <= 0x44)
+    {
+      u8 index;
+
+      index = (u8) (scancode - 0x3B);
+      if ((flags & KBD_FLAG_ALT) != 0)
+        token = (u16) (0x68 + index) << 8;
+      else if ((flags & KBD_FLAG_CTRL) != 0)
+        token = (u16) (0x5E + index) << 8;
+      else if ((flags & (KBD_FLAG_LEFT_SHIFT | KBD_FLAG_RIGHT_SHIFT)) != 0)
+        token = (u16) (0x54 + index) << 8;
+      else
+        token = (u16) scancode << 8;
+    }
+  else if (bios_keyboard_is_keypad_key (scancode))
+    {
+      if ((flags & KBD_FLAG_CTRL) != 0)
+        switch (scancode)
+          {
+          case 0x47: token = 0x7700; break;
+          case 0x49: token = 0x8400; break;
+          case 0x4B: token = 0x7300; break;
+          case 0x4D: token = 0x7400; break;
+          case 0x4F: token = 0x7500; break;
+          case 0x51: token = 0x7600; break;
+          default: break;
+          }
+
+      if (token == 0xFFFF)
+        {
+          if (scancode == 0x4A || scancode == 0x4E)
+            token = (u16) scancode << 8
+                    | bios_keyboard_ascii_lookup (bios_keyboard_ascii_normal,
+						  scancode);
+          else if (bios_keyboard_keypad_numeric_mode (flags))
+            token = (u16) scancode << 8
+                    | bios_keyboard_ascii_lookup (bios_keyboard_ascii_shift,
+						  scancode);
+          else if (scancode != 0x4C)
+            token = (u16) scancode << 8;
+        }
+    }
+  else
+    {
+      token = (u16) scancode << 8
+              | bios_keyboard_translate_ascii (scancode, prefix);
+    }
+
   return token;
+}
+
+/* ================================================
+ * Hardware Helpers
+ * ================================================ */
+
+static u8
+bios_keyboard_read_port61 (void)
+{
+  u8 value;
+
+  asm volatile ("inb $0x61,%%al":"=Ral" (value));
+  bios_work_write8 (WK_PORT61, value);
+  return value;
+}
+
+static void
+bios_keyboard_write_port61 (u8 value)
+{
+  bios_work_write8 (WK_PORT61, value);
+  asm volatile ("outb %%al,$0x61"::"Ral" (value));
 }
 
 static void
@@ -268,14 +419,14 @@ bios_keyboard_acknowledge_controller (void)
 {
   u8 port61;
 
-  port61 = bios_io_read (PORT_PPI_PORT_B);
-  bios_io_write (PORT_PPI_PORT_B, (u8) (port61 | PORT61_STATUS_MODE));
-  bios_io_write (PORT_PPI_PORT_B, (u8) (port61 & (u8) ~ PORT61_STATUS_MODE));
+  port61 = bios_keyboard_read_port61 ();
+  bios_keyboard_write_port61 ((u8) (port61 | PORT61_STATUS_MODE));
+  bios_keyboard_write_port61 ((u8) (port61 & (u8) ~ PORT61_STATUS_MODE));
 }
 
-/* ----------------------------------------------------------------
-   High-level key actions
-   ---------------------------------------------------------------- */
+/* ================================================
+ * High-level Key Actions
+ * ================================================ */
 
 static void
 bios_keyboard_queue_token (u16 token)
@@ -283,6 +434,12 @@ bios_keyboard_queue_token (u16 token)
   bios_work_write8 (WK_LAST_KBD_ASCII, bios_lo (token));
   if (token != 0xFFFF)
     bios_keyboard_put_entry (token);
+}
+
+void
+bios_keyboard_enqueue_token (u16 token)
+{
+  bios_keyboard_queue_token (token);
 }
 
 static void
@@ -323,9 +480,9 @@ bios_keyboard_warm_reset (void)
   __builtin_unreachable ();
 }
 
-/* ----------------------------------------------------------------
-   Modifier and special key handling
-   ---------------------------------------------------------------- */
+/* ================================================
+ * Modifier and Special Key Handling
+ * ================================================ */
 
 static int
 bios_keyboard_handle_modifier (u8 scancode, int released)
@@ -426,97 +583,22 @@ bios_keyboard_handle_modifier (u8 scancode, int released)
     }
 }
 
-static int
-bios_keyboard_queue_nvr_token (u8 lo_index, int released)
-{
-  if (released)
-    return 1;
-
-  bios_keyboard_queue_token (bios_keyboard_nvr_token (lo_index));
-  return 1;
-}
-
-static int
-bios_keyboard_handle_mouse_button (u8 button, int released)
-{
-  bios_regs_t regs;
-
-  regs.ax = (u16) ((released ? 0x80U : 0x00U) | button);
-  regs.bx = 0x0000;
-  regs.cx = 0x0000;
-  regs.dx = 0x0000;
-  regs.si = 0x0000;
-  regs.di = 0x0000;
-  regs.bp = 0x0000;
-  regs.ds = 0x0000;
-  regs.es = 0x0000;
-  regs.flags = 0x0000;
-  bios_service_int06 (&regs);
-
-  if (!released && (regs.flags & BIOS_FLAG_CF) != 0)
-    bios_keyboard_queue_token (regs.ax);
-  return 1;
-}
-
-static int
-bios_keyboard_handle_pc1640_special (u8 scancode, int released)
-{
-  switch (scancode)
-    {
-    case 0x70:
-      return bios_keyboard_queue_nvr_token (CMOS_NVR_DELETE_KEY_LO, released);
-
-    case 0x74:
-      return bios_keyboard_queue_nvr_token (CMOS_NVR_ENTER_KEY_LO, released);
-
-    case 0x77:
-      return bios_keyboard_queue_nvr_token (CMOS_NVR_JOYSTICK2_LO, released);
-
-    case 0x78:
-      return bios_keyboard_queue_nvr_token (CMOS_NVR_JOYSTICK1_LO, released);
-
-    case 0x79:
-      if (!released)
-	bios_keyboard_queue_token (0x4D00);
-      return 1;
-
-    case 0x7A:
-      if (!released)
-	bios_keyboard_queue_token (0x4B00);
-      return 1;
-
-    case 0x7B:
-      if (!released)
-	bios_keyboard_queue_token (0x5000);
-      return 1;
-
-    case 0x7C:
-      if (!released)
-	bios_keyboard_queue_token (0x4800);
-      return 1;
-
-    case 0x7D:
-      return bios_keyboard_handle_mouse_button (0, released);
-
-    case 0x7E:
-      return bios_keyboard_handle_mouse_button (1, released);
-
-    default:
-      return 0;
-    }
-}
-
-/* ----------------------------------------------------------------
-   Public API: init, self-test, IRQ handler, BIOS services
-   ---------------------------------------------------------------- */
+/* ================================================
+ * Public API: Init, Self-test, IRQ Handler, BIOS Services
+ * ================================================ */
 
 void
 bios_keyboard_clear_buffer (void)
 {
+  u16 start;
+
+  start = bios_bda_read16 (BDA_KBD_BUF_START_PTR);
+  if (start == 0)
+    start = BDA_KBD_BUF_START;
   bios_bda_write8 (BDA_KBD_ALT_PAD, 0x00);
   bios_bda_write8 (BDA_BREAK_FLAG, 0x00);
-  bios_bda_write16 (BDA_KBD_BUF_HEAD, BDA_KBD_BUF_START);
-  bios_bda_write16 (BDA_KBD_BUF_TAIL, BDA_KBD_BUF_START);
+  bios_bda_write16 (BDA_KBD_BUF_HEAD, start);
+  bios_bda_write16 (BDA_KBD_BUF_TAIL, start);
   bios_work_write8 (WK_KBD_PREFIX, 0x00);
   bios_work_write8 (WK_LAST_KBD_SCANCODE, 0x00);
   bios_work_write8 (WK_LAST_KBD_ASCII, 0x00);
@@ -531,6 +613,8 @@ bios_keyboard_clear_buffer (void)
 void
 bios_keyboard_init (void)
 {
+  bios_bda_write16 (BDA_KBD_BUF_START_PTR, BDA_KBD_BUF_START);
+  bios_bda_write16 (BDA_KBD_BUF_END_PTR, BDA_KBD_BUF_END);
   bios_bda_write8 (BDA_KBD_FLAGS, 0x00);
   bios_bda_write8 (BDA_KBD_FLAGS_2, 0x00);
   bios_keyboard_clear_buffer ();
@@ -541,30 +625,14 @@ int
 bios_keyboard_self_test (void)
 {
   u8 saved_port61;
-  u8 normal_port61;
+  u8 raw_scancode;
+  u8 reset_port61;
   u8 outer;
   u16 poll;
 
-  saved_port61 = bios_io_read (PORT_PPI_PORT_B);
-  normal_port61 = (u8) (saved_port61 & (u8) ~ (PORT61_STATUS_MODE
-						| PORT61_KBD_RESET));
-
-  /*
-   * Detect the keyboard by forcing a fresh reset.
-   *
-   * Our keyboard test runs late in POST, long after the keyboard's
-   * power-on BAT completed and the 0xAA byte was (likely) consumed
-   * or lost.  Rather than retroactively detecting the earlier 0xAA,
-   * force the keyboard controller to reset the keyboard by asserting
-   * KBD_RESET (port 61h bit 6), then wait for the fresh BAT 0xAA.
-   *
-   * Sequence:
-   *   1. Quick check: if IRQ1 already delivered 0xAA, succeed fast
-   *   2. CLI, clear sentinel
-   *   3. Assert KBD_RESET and STATUS_MODE (flush + hold reset)
-   *   4. Delay, then release KBD_RESET and STATUS_MODE
-   *   5. STI, poll WK_LAST_KBD_RAW for 0xAA via IRQ1
-   */
+  saved_port61 = bios_keyboard_read_port61 ();
+  reset_port61 = (u8) ((saved_port61 & (u8) ~PORT61_KBD_RESET)
+                       | PORT61_STATUS_MODE);
 
   /* Fast path: IRQ already delivered 0xAA during earlier POST. */
   if (bios_work_read8 (WK_LAST_KBD_RAW) == 0xAA)
@@ -574,47 +642,55 @@ bios_keyboard_self_test (void)
   bios_work_write8 (WK_LAST_KBD_RAW, 0x00);
 
   /*
-   * Assert KBD_RESET and STATUS_MODE to reset the keyboard and
-   * flush any stale data from the shift register.
+   * Match the original PC1640 late-POST keyboard BAT more closely:
+   * port 61h is pulsed with bit 7 set while bit 6 stays clear, then
+   * the previous 61h image is restored and IRQ1 is allowed to report
+   * the BAT byte through WK_LAST_KBD_RAW.
    */
-  bios_io_write (PORT_PPI_PORT_B,
-		 (u8) (normal_port61 | PORT61_KBD_RESET
-			| PORT61_STATUS_MODE));
+  bios_keyboard_write_port61 (reset_port61);
   for (poll = 0; poll != 0x2710; ++poll)
     bios_hw_pause ();
-
-  /* Release: clear both KBD_RESET and STATUS_MODE. */
-  bios_io_write (PORT_PPI_PORT_B, normal_port61);
+  bios_keyboard_write_port61 (saved_port61);
 
   bios_hw_enable_interrupts ();
 
-  /* Wait for the keyboard's fresh BAT 0xAA byte via IRQ1. */
+  /*
+   * Wait for IRQ1 to deposit any fresh BAT/result byte. The original
+   * ROS treats a non-zero byte as the end of the wait window and then
+   * compares it against AAh.
+   */
+  raw_scancode = 0x00;
   for (outer = 10; outer != 0; --outer)
     {
       poll = 0;
       do
 	{
-	  if (bios_work_read8 (WK_LAST_KBD_RAW) == 0xAA)
-	    goto success;
+	  raw_scancode = bios_work_read8 (WK_LAST_KBD_RAW);
+	  if (raw_scancode != 0x00)
+	    goto have_result;
 	}
       while (++poll != 0);		/* 65536 iterations */
     }
 
-  bios_io_write (PORT_PPI_PORT_B, normal_port61);
-  return 0;
+have_result:
+  bios_keyboard_write_port61 (saved_port61);
+  if (raw_scancode != 0xAA)
+    return 0;
 
 success:
   bios_bda_write8 (BDA_KBD_FLAGS, 0x00);
   bios_bda_write8 (BDA_KBD_FLAGS_2, 0x00);
   bios_keyboard_clear_buffer ();
-  bios_io_write (PORT_PPI_PORT_B, normal_port61);
+  bios_keyboard_write_port61 (saved_port61);
   return 1;
+
+  /* NOTREACHED */
+  return 0;
 }
 
-void
-bios_keyboard_irq1 (void)
+static void
+bios_keyboard_process_scancode (u8 raw_scancode, int ack_irq1)
 {
-  u8 raw_scancode;
   u8 scancode;
   u8 prefix;
   u8 flags;
@@ -623,14 +699,12 @@ bios_keyboard_irq1 (void)
   u16 token;
   int released;
 
-  /* Read and acknowledge the scancode from the controller. */
-  raw_scancode = bios_io_read (PORT_KBD_DATA);
   bios_work_write8 (WK_LAST_KBD_RAW, raw_scancode);
-  bios_keyboard_acknowledge_controller ();
 
   if (raw_scancode == 0x00)
     {
-      bios_pic_ack_irq (1);
+      if (ack_irq1)
+        bios_pic_ack_irq (1);
       return;
     }
 
@@ -638,7 +712,8 @@ bios_keyboard_irq1 (void)
   if (raw_scancode == 0xE0 || raw_scancode == 0xE1)
     {
       bios_work_write8 (WK_KBD_PREFIX, raw_scancode);
-      bios_pic_ack_irq (1);
+      if (ack_irq1)
+        bios_pic_ack_irq (1);
       return;
     }
 
@@ -652,6 +727,7 @@ bios_keyboard_irq1 (void)
 
   flags = bios_keyboard_flags ();
   flags2 = bios_bda_read8 (BDA_KBD_FLAGS_2);
+  bios_keyboard_trace_raw (raw_scancode, prefix, flags, flags2);
 
   /* Pause state: any key except Num Lock itself clears pause. */
   if ((flags2 & KBD_FLAG_PAUSE_ACTIVE) != 0)
@@ -659,7 +735,8 @@ bios_keyboard_irq1 (void)
       if (scancode != 0x45)
 	bios_bda_write8 (BDA_KBD_FLAGS_2,
 			 (u8) (flags2 & (u8) ~ KBD_FLAG_PAUSE_ACTIVE));
-      bios_pic_ack_irq (1);
+      if (ack_irq1)
+        bios_pic_ack_irq (1);
       return;
     }
 
@@ -670,7 +747,8 @@ bios_keyboard_irq1 (void)
       bios_keyboard_toggle_flag (KBD_FLAG_NUM_LOCK);
       bios_bda_write8 (BDA_KBD_FLAGS_2,
 		       (u8) (flags2 | KBD_FLAG_PAUSE_ACTIVE));
-      bios_pic_ack_irq (1);
+      if (ack_irq1)
+        bios_pic_ack_irq (1);
       bios_hw_enable_interrupts ();
       while ((bios_bda_read8 (BDA_KBD_FLAGS_2) & KBD_FLAG_PAUSE_ACTIVE) != 0)
 	bios_hw_halt ();
@@ -701,23 +779,24 @@ bios_keyboard_irq1 (void)
 
   /* Ctrl+Alt+Del: warm reboot. */
   if (!released
-      && prefix == 0x00
-      && scancode == 0x53
+      && ((prefix == 0x00 && (scancode == 0x53 || scancode == 0x70))
+          || (prefix == 0xE0 && scancode == 0x53))
       && (flags & (KBD_FLAG_CTRL | KBD_FLAG_ALT))
 	 == (KBD_FLAG_CTRL | KBD_FLAG_ALT))
     bios_keyboard_warm_reset ();
 
-  /* PC1640-specific extended scancodes (mouse buttons, joystick, etc.). */
-  if (bios_keyboard_handle_pc1640_special (scancode, released))
+  if (machine_keyboard_special (scancode, released))
     {
-      bios_pic_ack_irq (1);
+      if (ack_irq1)
+        bios_pic_ack_irq (1);
       return;
     }
 
   /* Modifier keys (shift, ctrl, alt, caps/num/scroll lock, insert). */
   if (bios_keyboard_handle_modifier (scancode, released))
     {
-      bios_pic_ack_irq (1);
+      if (ack_irq1)
+        bios_pic_ack_irq (1);
       return;
     }
 
@@ -729,14 +808,16 @@ bios_keyboard_irq1 (void)
     {
       bios_bda_write8 (BDA_KBD_ALT_PAD,
 		       (u8) (bios_bda_read8 (BDA_KBD_ALT_PAD) * 10 + digit));
-      bios_pic_ack_irq (1);
+      if (ack_irq1)
+        bios_pic_ack_irq (1);
       return;
     }
 
   /* All remaining key releases are silently discarded. */
   if (released)
     {
-      bios_pic_ack_irq (1);
+      if (ack_irq1)
+        bios_pic_ack_irq (1);
       return;
     }
 
@@ -745,60 +826,30 @@ bios_keyboard_irq1 (void)
     bios_bda_write8 (BDA_KBD_ALT_PAD, 0x00);
 
   /* Build the INT 16h token (AH = scancode, AL = ASCII). */
-  token = 0xFFFF;
+  token = bios_keyboard_build_token_exact (scancode, prefix, flags);
+  if (token == 0xFFFF)
+    token = bios_keyboard_build_token_legacy (scancode, prefix, flags);
 
-  if (scancode >= 0x3B && scancode <= 0x44)
-    {
-      /* F1-F10 with modifier variants. */
-      u8 index;
-
-      index = (u8) (scancode - 0x3B);
-      if ((flags & KBD_FLAG_ALT) != 0)
-	token = (u16) (0x68 + index) << 8;
-      else if ((flags & KBD_FLAG_CTRL) != 0)
-	token = (u16) (0x5E + index) << 8;
-      else if ((flags & (KBD_FLAG_LEFT_SHIFT | KBD_FLAG_RIGHT_SHIFT)) != 0)
-	token = (u16) (0x54 + index) << 8;
-      else
-	token = (u16) scancode << 8;
-    }
-  else if (bios_keyboard_is_keypad_key (scancode))
-    {
-      /* Ctrl+keypad navigation keys. */
-      if ((flags & KBD_FLAG_CTRL) != 0)
-	switch (scancode)
-	  {
-	  case 0x47: token = 0x7700; break;
-	  case 0x49: token = 0x8400; break;
-	  case 0x4B: token = 0x7300; break;
-	  case 0x4D: token = 0x7400; break;
-	  case 0x4F: token = 0x7500; break;
-	  case 0x51: token = 0x7600; break;
-	  default: break;
-	  }
-
-      /* Keypad keys not handled by the Ctrl special cases. */
-      if (token == 0xFFFF)
-	{
-	  if (scancode == 0x4A || scancode == 0x4E)
-	    token = (u16) scancode << 8
-		    | bios_keyboard_ascii_normal[scancode];
-	  else if (bios_keyboard_keypad_numeric_mode (flags))
-	    token = (u16) scancode << 8
-		    | bios_keyboard_ascii_shift[scancode];
-	  else if (scancode != 0x4C)
-	    token = (u16) scancode << 8;
-	}
-    }
-  else
-    {
-      /* Ordinary keys: scancode in AH, translated ASCII in AL. */
-      token = (u16) scancode << 8
-	      | bios_keyboard_translate_ascii (scancode, prefix);
-    }
-
+  bios_keyboard_trace_token (scancode, prefix, flags, token);
   bios_keyboard_queue_token (token);
-  bios_pic_ack_irq (1);
+  if (ack_irq1)
+    bios_pic_ack_irq (1);
+}
+
+void
+bios_keyboard_irq1 (void)
+{
+  u8 raw_scancode;
+
+  /*
+   * IRQ1 must drain the live keyboard data byte. The BIOS port 60h helper
+   * also emulates the PC1640 "status mode" multiplexing used by POST, and
+   * consulting that shadow here can fabricate a bogus scancode if port 61h
+   * was left with STATUS_MODE set.
+   */
+  raw_scancode = bios_hw_in8 (PORT_KBD_DATA);
+  bios_keyboard_acknowledge_controller ();
+  bios_keyboard_process_scancode (raw_scancode, 1);
 }
 
 void
@@ -813,45 +864,9 @@ bios_keyboard_wait_for_keypress (void)
     }
 }
 
-/* ----------------------------------------------------------------
-   INT 06h: Amstrad mouse button service
-   ---------------------------------------------------------------- */
-
-void
-bios_service_int06 (bios_regs_t __far *regs)
-{
-  u8 button;
-  u8 index;
-
-  button = bios_lo (regs->ax);
-  if ((button & 0x80) != 0)
-    {
-      bios_clear_cf (regs);
-      return;
-    }
-
-  switch (button)
-    {
-    case 0:
-      index = CMOS_NVR_MOUSE1_LO;
-      break;
-
-    case 1:
-      index = CMOS_NVR_MOUSE2_LO;
-      break;
-
-    default:
-      bios_clear_cf (regs);
-      return;
-    }
-
-  regs->ax = bios_keyboard_nvr_token (index);
-  bios_set_cf (regs);
-}
-
-/* ----------------------------------------------------------------
-   INT 16h: keyboard BIOS service
-   ---------------------------------------------------------------- */
+/* ================================================
+ * INT 16h Service Dispatch
+ * ================================================ */
 
 void
 bios_service_int16 (bios_regs_t __far *regs)

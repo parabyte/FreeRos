@@ -1,19 +1,23 @@
+/* ================================================
+ * FreeRos BIOS
+ * bios_ports.h: I/O port addresses and BDA/CMOS register map
+ * ================================================ */
+
 #ifndef NEW_BIOS_PORTS_H
 #define NEW_BIOS_PORTS_H
 
 #include "bios_types.h"
 
-enum
-{
-  BIOS_LANG_DIAGNOSTIC = 0,
-  BIOS_LANG_ITALIAN = 1,
-  BIOS_LANG_SWEDISH = 2,
-  BIOS_LANG_DANISH = 3,
-  BIOS_LANG_SPANISH = 4,
-  BIOS_LANG_FRENCH = 5,
-  BIOS_LANG_GERMAN = 6,
-  BIOS_LANG_ENGLISH = 7
-};
+/* ================================================
+ * Language constants
+ * ================================================ */
+
+/* The trimmed ROS keeps only the English language strap value. */
+#define BIOS_LANG_ENGLISH 0x07
+
+/* ================================================
+ * I/O port addresses
+ * ================================================ */
 
 /* Standard XT-class I/O plus Amstrad-specific ports. */
 #define PORT_DMA_CH0_ADDR 0x0000
@@ -26,9 +30,11 @@ enum
 #define PORT_DMA1_CLEAR_FF 0x000C
 #define PORT_DMA1_MASTER_CLEAR 0x000D
 #define PORT_DMA_PAGE_CH0 0x0087
+#define PORT_DMA_PAGE_CH1 0x0083
 #define PORT_PIC_CMD 0x0020
 #define PORT_PIC_DATA 0x0021
 #define PORT_PIT_CH0 0x0040
+#define PORT_PIT_CH1 0x0041
 #define PORT_PIT_CH2 0x0042
 #define PORT_PIT_MODE 0x0043
 #define PORT_KBD_DATA 0x0060
@@ -42,6 +48,7 @@ enum
 #define PORT_MOUSE_X 0x0078
 #define PORT_MOUSE_Y 0x007A
 #define PORT_DMA_PAGE_CH2 0x0081
+#define PORT_DMA_PAGE_CH3 0x0082
 #define PORT_NMI_MASK 0x00A0
 #define PORT_LPT1_DATA 0x0378
 #define PORT_LPT1_STATUS 0x0379
@@ -66,7 +73,9 @@ enum
 #define PORT_FDC_DATA 0x03F5
 #define PORT_FDC_DIR 0x03F7
 #define PORT_FDC_CCR 0x03F7
-#define PORT_DEAD_DIAG 0xDEAD
+/* ================================================
+ * Port bit definitions
+ * ================================================ */
 
 /* Port 0x61 shadow bits. */
 #define PORT61_SPEAKER_GATE 0x01
@@ -91,10 +100,45 @@ enum
 #define LPT1_CONTROL_SWITCH_SW6 0x40
 #define LPT1_CONTROL_SWITCH_SW7 0x80
 
+/* ================================================
+ * Config overrides
+ * ================================================ */
+
 #include "config.h"
+
+#undef BIOS_ROM_SEGMENT
+#if BIOS_CFG_EXECUTE_IN_PLACE
+#define BIOS_ROM_SEGMENT BIOS_CFG_ROM_ENTRY_SEGMENT
+#else
+#define BIOS_ROM_SEGMENT BIOS_CFG_RUNTIME_SEGMENT
+#endif
+
+#undef BIOS_STACK_SEGMENT
+#undef BIOS_STACK_OFFSET
+#if BIOS_CFG_EXECUTE_IN_PLACE
+/*
+ * In execute-in-place mode the compiler's small-model code restores DS from
+ * SS (push %ss; pop %ds).  DS must equal CS (the ROM segment) so that near
+ * pointers to const data resolve to ROM.  Therefore SS must also equal CS.
+ *
+ * The physical stack lives in low RAM.  With A20 disabled (standard on XT-
+ * class machines) addresses above 1 MB wrap around, so FC00:4400 maps to
+ * physical 0x00400 -- the same location as 0030:0100.
+ */
+#define BIOS_STACK_SEGMENT BIOS_ROM_SEGMENT
+#define BIOS_STACK_OFFSET 0x4400
+#else
+#define BIOS_STACK_SEGMENT BIOS_CFG_STACK_SEGMENT
+#define BIOS_STACK_OFFSET BIOS_CFG_STACK_OFFSET
+#endif
+
+/* ================================================
+ * Floppy controller and DMA constants
+ * ================================================ */
 
 /* Floppy controller and DMA status bits. */
 #define FDC_STATUS_BUSY 0x10
+#define FDC_STATUS_NDMA 0x20
 #define FDC_STATUS_DIR 0x40
 #define FDC_STATUS_READY 0x80
 
@@ -123,11 +167,18 @@ enum
 #define DMA_MODE_READ 0x44
 #define DMA_MODE_WRITE 0x48
 
+/* ================================================
+ * BDA offsets
+ * ================================================ */
+
 /* BIOS Data Area offsets (segment 0x40). */
 #define BDA_COM1_BASE 0x0000
 #define BDA_COM2_BASE 0x0002
+#define BDA_COM3_BASE 0x0004
+#define BDA_COM4_BASE 0x0006
 #define BDA_LPT1_BASE 0x0008
 #define BDA_LPT2_BASE 0x000A
+#define BDA_LPT3_BASE 0x000C
 #define BDA_EQUIPMENT_WORD 0x0010
 #define BDA_MEMORY_SIZE_KB 0x0013
 #define BDA_EXTRA_MEMORY_KB 0x0015
@@ -174,6 +225,10 @@ enum
 #define BDA_KBD_BUF_START_PTR 0x0080
 #define BDA_KBD_BUF_END_PTR 0x0082
 
+/* ================================================
+ * Keyboard status flags
+ * ================================================ */
+
 /* Keyboard status flag bits in BDA 0x417. */
 #define KBD_FLAG_RIGHT_SHIFT 0x01
 #define KBD_FLAG_LEFT_SHIFT 0x02
@@ -191,16 +246,20 @@ enum
 
 #define BIOS_KBD_BUFFER_BYTES 32
 
-/* Private work area moved above the stock PC1640 ROS variables. */
-#define BIOS_WORK_BASE 0x0600
+/* ================================================
+ * Work area offsets
+ * ================================================ */
+
+/* Keep ROS scratch storage inside the original PC1640 ROS RAM window. */
+#define BIOS_WORK_BASE 0x0300
 #define BIOS_PRINT_SCREEN_STATUS 0x0500
 #define WK_PORT61 0x0000
 #define WK_PORT62 0x0001
 #define WK_PORT64 0x0002
 #define WK_PORT65 0x0003
 #define WK_CMOS_INDEX 0x0004
-#define WK_LAST_POST_CODE 0x0005
-#define WK_LANGUAGE 0x0006
+/* 0x0005 reserved */
+/* 0x0006 is intentionally unused after removing language bookkeeping. */
 #define WK_BOOT_FLAGS 0x0007
 #define WK_SOFT_RESET_LATCH 0x0008
 #define WK_FDC_STATUS 0x000A
@@ -219,7 +278,24 @@ enum
 #define WK_FDC_CYLINDER_1 0x0017
 #define WK_LAST_KBD_RAW 0x0018
 #define WK_VIDEO_FONT_BLOCK 0x0019
+#define WK_BOOT_INT13_REGS_SS 0x001A
+/*
+ * INT 19h bootstrap INT 13h proxy: bios_regs_t (20 bytes) in low RAM so
+ * bios_service_int13 can use a real __far pointer.  Stack-resident structs
+ * passed as (bios_regs_t __far *)&auto break when DS != SS in XIP.
+ *
+ * Must NOT live under BIOS_WORK_BASE (0x300): that overlaps the real-mode IVT
+ * (INT C0h–FFh) and corrupts vectors whenever the proxy is written — floppy
+ * IRQ / option ROMs can then fail unpredictably.  Use the low RAM window just
+ * above the print-screen status byte (0500h), which is free on PC/XT class
+ * hardware during POST/bootstrap.
+ */
+#define BIOS_BOOT_INT13_PROXY_OFF 0x0510
 #define WK_CMOS_SHADOW 0x0040
+
+/* ================================================
+ * IDE constants
+ * ================================================ */
 
 #define IDE_STATUS_ERR 0x01
 #define IDE_STATUS_DRQ 0x08
@@ -262,6 +338,10 @@ enum
 #define FLOPPY_ST_SEEK_FAILED 0x40
 #define FLOPPY_ST_TIMEOUT 0x80
 
+/* ================================================
+ * Video constants
+ * ================================================ */
+
 /* INT 10h mode numbers used by the legacy ROM services. */
 #define VIDEO_MODE_40X25_BW 0x00
 #define VIDEO_MODE_40X25_COLOR 0x01
@@ -271,6 +351,10 @@ enum
 #define VIDEO_MODE_320X200_BW 0x05
 #define VIDEO_MODE_640X200_BW 0x06
 #define VIDEO_MODE_80X25_MONO 0x07
+
+/* ================================================
+ * CMOS register map
+ * ================================================ */
 
 /* CMOS bytes used by the original ROM. */
 #define CMOS_REG_A 0x0A
@@ -323,8 +407,12 @@ enum
 #define CMOS_NVR_RAMDISK_SIZE 0x25
 #define CMOS_NVR_UART_SYSTEM 0x26
 #define CMOS_NVR_UART_EXTERNAL 0x27
-#define CMOS_NVR_CHECKSUM_START 0x0E
-#define CMOS_NVR_CHECKSUM_END 0x35
+/*
+ * The original PC1640 ROS validates the NVR block from CMOS locations 14-63
+ * decimal, which is 0x14-0x3F in the RTC index space.
+ */
+#define CMOS_NVR_CHECKSUM_START 0x14
+#define CMOS_NVR_CHECKSUM_END 0x3F
 
 #define CMOS_REG_B_24HOUR 0x02
 #define CMOS_REG_B_SET_CLOCK 0x80

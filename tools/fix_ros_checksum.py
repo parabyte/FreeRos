@@ -2,10 +2,8 @@ from pathlib import Path
 import sys
 
 
-ROS_OFFSET = 0x0000
 ROS_SIZE = 0x4000
-CHECKSUM_OFFSET = 0x3FF5
-ROM_SIZE = 0x4000
+CHECKSUM_REL_OFFSET = 0x3FF5
 
 
 def main() -> int:
@@ -15,13 +13,17 @@ def main() -> int:
 
     path = Path(sys.argv[1])
     data = bytearray(path.read_bytes())
-    if len(data) != ROM_SIZE:
-        print(f"unexpected ROM size: {len(data)}", file=sys.stderr)
+    rom_size = len(data)
+    if rom_size < ROS_SIZE or (rom_size & (rom_size - 1)) != 0:
+        print(f"unexpected ROM size: {rom_size}", file=sys.stderr)
         return 1
 
-    data[CHECKSUM_OFFSET] = 0
-    checksum = (-sum(data[ROS_OFFSET : ROS_OFFSET + ROS_SIZE])) & 0xFF
-    data[CHECKSUM_OFFSET] = checksum
+    ros_start = rom_size - ROS_SIZE
+    checksum_offset = ros_start + CHECKSUM_REL_OFFSET
+
+    data[checksum_offset] = 0
+    checksum = (-sum(data[ros_start : ros_start + ROS_SIZE])) & 0xFF
+    data[checksum_offset] = checksum
     path.write_bytes(data)
     return 0
 
