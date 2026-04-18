@@ -4,15 +4,7 @@ FreeRos PC1640 Compatible BIOS
 This repository contains the BIOS source tree and build system for the Amstrad
 PC1640DD-compatible FreeRos BIOS.
 
-Scope
------
-- Includes BIOS source, configuration system, build scripts, and XTIDE source.
-- Excludes test harnesses, emulator integrations, hidden files, and floppy or
-  hard disk images.
-- Keeps only the Exomizer-related build hook needed to compress payloads during
-  the build plus the BIOS-side decompression code already used by the ROM.
-- Builds Exomizer in a disposable temporary tree and retains only the local
-  compressor binary plus a small version stamp under `build/exomizer-bin/`.
+Contact me for licensing details, do not use in commercial products, xtide code i am using is excempt from this clause
 
 Prerequisites
 -------------
