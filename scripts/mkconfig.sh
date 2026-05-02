@@ -59,6 +59,7 @@ strip_0x() {
 # --- Floppy drive type mapping ---
 floppy_type_macro() {
     case "$1" in
+        180K) echo "BIOS_FLOPPY_TYPE_180K_525SD" ;;
         360K) echo "BIOS_FLOPPY_TYPE_360K_525DD" ;;
         720K) echo "BIOS_FLOPPY_TYPE_720K_35DD" ;;
         *)    echo "BIOS_FLOPPY_TYPE_NONE" ;;
@@ -210,10 +211,12 @@ EMS_ENABLED="${CONFIG_EMS_ENABLED:-n}"
 
 # Determine floppy drive A type from choice variables
 FLOPPY_A_TYPE="NONE"
+if [ "$CONFIG_FLOPPY_A_180K" = "y" ]; then FLOPPY_A_TYPE="180K"; fi
 if [ "$CONFIG_FLOPPY_A_360K" = "y" ]; then FLOPPY_A_TYPE="360K"; fi
 if [ "$CONFIG_FLOPPY_A_720K" = "y" ]; then FLOPPY_A_TYPE="720K"; fi
 
 FLOPPY_B_TYPE="NONE"
+if [ "$CONFIG_FLOPPY_B_180K" = "y" ]; then FLOPPY_B_TYPE="180K"; fi
 if [ "$CONFIG_FLOPPY_B_360K" = "y" ]; then FLOPPY_B_TYPE="360K"; fi
 if [ "$CONFIG_FLOPPY_B_720K" = "y" ]; then FLOPPY_B_TYPE="720K"; fi
 

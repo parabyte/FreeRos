@@ -97,6 +97,9 @@ CONFIG_FLOPPY_SUPPORT_35DD
 CONFIG_FLOPPY_A_NONE
   Drive A is not installed.
 
+CONFIG_FLOPPY_A_180K
+  Drive A is a 180K 5.25" single-sided DD floppy drive.
+
 CONFIG_FLOPPY_A_360K
   Drive A is a 360K 5.25" DD floppy drive.
 
@@ -105,6 +108,9 @@ CONFIG_FLOPPY_A_720K
 
 CONFIG_FLOPPY_B_NONE
   Drive B is not installed.
+
+CONFIG_FLOPPY_B_180K
+  Drive B is a 180K 5.25" single-sided DD floppy drive.
 
 CONFIG_FLOPPY_B_360K
   Drive B is a 360K 5.25" DD floppy drive.

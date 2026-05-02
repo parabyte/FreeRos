@@ -24,18 +24,25 @@
 /* LPT1 status bits used as language straps on the PC1640. */
 #define LPT1_STATUS_LANGUAGE_MASK 0x07
 #define LPT1_STATUS_DIP_LATCH 0x20
+#ifndef LPT1_STATUS_DECODE_LANGUAGE
+#define LPT1_STATUS_DECODE_LANGUAGE(value) \
+  (((value) ^ LPT1_STATUS_LANGUAGE_MASK) & LPT1_STATUS_LANGUAGE_MASK)
+#endif
 
 /* ================================================
  * Display switch latch definitions
  * ================================================ */
 
 /*
- * PC1640 display switches exposed through the printer status latch.
- * A dummy read from 0x0078 selects SW9 and from 0x4278 selects SW10
- * before the following read from 0x037A.
+ * PC1640 display switches exposed through bit 5 of the printer control latch.
+ * The dummy read before 0x037A selects which switch source is returned:
+ * implemented main-board port with A7 high for OPT, unimplemented port with
+ * A14=0/A7=0 for SW9, and unimplemented port with A14=1/A7=0 for SW10.
  */
-#define PORT_PC1640_SW9_LATCH 0x0078
+#define PORT_PC1640_OPT_LATCH 0x03D4
+#define PORT_PC1640_SW9_LATCH 0x0278
 #define PORT_PC1640_SW10_LATCH 0x4278
+#define LPT1_CONTROL_OPT 0x20
 #define LPT1_CONTROL_SWITCH_SW10 0x20
 #define LPT1_CONTROL_SWITCH_SW9 0x20
 #define LPT1_CONTROL_SWITCH_SW6 0x40

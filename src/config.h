@@ -62,8 +62,11 @@
 
 /* Factory strap defaults. */
 #define BIOS_CFG_LPT_DIP_LATCH LPT1_STATUS_DIP_LATCH
-#define BIOS_CFG_LPT1_STATUS ((BIOS_LANG_ENGLISH & LPT1_STATUS_LANGUAGE_MASK)   \
-                              | BIOS_CFG_LPT_DIP_LATCH)
+#define BIOS_CFG_LANGUAGE_LINK_BITS                                             \
+  LPT1_STATUS_DECODE_LANGUAGE (BIOS_LANG_ENGLISH)
+#define BIOS_CFG_LPT1_STATUS                                                    \
+  ((BIOS_CFG_LANGUAGE_LINK_BITS & LPT1_STATUS_LANGUAGE_MASK)                    \
+   | BIOS_CFG_LPT_DIP_LATCH)
 
 /* Default video state. */
 #define BIOS_CFG_VIDEO_EQUIPMENT_EGA_ADAPTER 0x00
@@ -101,6 +104,7 @@
 /* Floppy controller profiles. Stock PC1640DD uses dual 360 KiB drives. */
 #define BIOS_CFG_HAS_FLOPPY_CONTROLLER 0
 #define BIOS_FLOPPY_TYPE_NONE 0x00
+#define BIOS_FLOPPY_TYPE_180K_525SD 0x05
 #define BIOS_FLOPPY_TYPE_360K_525DD 0x01
 #define BIOS_FLOPPY_TYPE_720K_35DD 0x03
 
@@ -284,9 +288,11 @@
 #endif
 
 #if (BIOS_CFG_FLOPPY_TYPE_A != BIOS_FLOPPY_TYPE_NONE                          \
+     && BIOS_CFG_FLOPPY_TYPE_A != BIOS_FLOPPY_TYPE_180K_525SD                \
      && BIOS_CFG_FLOPPY_TYPE_A != BIOS_FLOPPY_TYPE_360K_525DD                \
      && BIOS_CFG_FLOPPY_TYPE_A != BIOS_FLOPPY_TYPE_720K_35DD)                \
   || (BIOS_CFG_FLOPPY_TYPE_B != BIOS_FLOPPY_TYPE_NONE                        \
+      && BIOS_CFG_FLOPPY_TYPE_B != BIOS_FLOPPY_TYPE_180K_525SD               \
       && BIOS_CFG_FLOPPY_TYPE_B != BIOS_FLOPPY_TYPE_360K_525DD               \
       && BIOS_CFG_FLOPPY_TYPE_B != BIOS_FLOPPY_TYPE_720K_35DD)
 #error Unsupported floppy drive type selected

@@ -87,18 +87,42 @@
 /* LPT1 status bits that the PC1640 BIOS uses as language straps. */
 #define LPT1_STATUS_LANGUAGE_MASK 0x07
 #define LPT1_STATUS_DIP_LATCH 0x20
+#define LPT1_STATUS_DECODE_LANGUAGE(value) \
+  (((value) ^ LPT1_STATUS_LANGUAGE_MASK) & LPT1_STATUS_LANGUAGE_MASK)
 
 /*
- * The PC1640 exposes display switches through the printer status latch. A
- * dummy read from 0x0078 selects SW9 and a dummy read from 0x4278 selects
- * SW10 before the following read from 0x037A.
+ * The PC1640 exposes display switches through bit 5 of the printer control
+ * latch. The dummy read before 0x037A chooses which source is returned there:
+ *  - any implemented main-board port with A7 high: PC1512/PC1640 OPT probe
+ *  - unimplemented port with A14=0, A7=0: SW9
+ *  - unimplemented port with A14=1, A7=0: SW10
  */
-#define PORT_PC1640_SW9_LATCH 0x0078
+#define PORT_PC1640_OPT_LATCH 0x03D4
+#define PORT_PC1640_SW9_LATCH 0x0278
 #define PORT_PC1640_SW10_LATCH 0x4278
+#define LPT1_CONTROL_OPT 0x20
 #define LPT1_CONTROL_SWITCH_SW10 0x20
 #define LPT1_CONTROL_SWITCH_SW9 0x20
 #define LPT1_CONTROL_SWITCH_SW6 0x40
 #define LPT1_CONTROL_SWITCH_SW7 0x80
+
+/* PC1640 EGC control/status at 03C2h. */
+#define PC1640_EGC_CONTROL_CRTC_COLOR 0x01
+#define PC1640_EGC_CONTROL_RAM_ENABLE 0x02
+#define PC1640_EGC_CONTROL_SWITCH_SELECT_MASK 0x0C
+#define PC1640_EGC_CONTROL_CLOCK_16MHZ 0x04
+#define PC1640_EGC_CONTROL_HSYNC_NEGATIVE 0x40
+#define PC1640_EGC_CONTROL_VSYNC_NEGATIVE 0x80
+#define PC1640_EGC_CONTROL_SWITCH1 0x0C
+#define PC1640_EGC_CONTROL_SWITCH2 0x08
+#define PC1640_EGC_CONTROL_SWITCH3 0x04
+#define PC1640_EGC_CONTROL_SWITCH4 0x00
+#define PC1640_EGC_STATUS_SWITCH_SENSE 0x10
+#define PC1640_EGC_CONTROL_MONO_TEXT \
+  (PC1640_EGC_CONTROL_RAM_ENABLE | PC1640_EGC_CONTROL_VSYNC_NEGATIVE)
+#define PC1640_EGC_CONTROL_COLOR_TEXT \
+  (PC1640_EGC_CONTROL_CRTC_COLOR | PC1640_EGC_CONTROL_RAM_ENABLE \
+   | PC1640_EGC_CONTROL_CLOCK_16MHZ | PC1640_EGC_CONTROL_HSYNC_NEGATIVE)
 
 /* ================================================
  * Config overrides

@@ -106,20 +106,24 @@ mainmenu_option next_comment
 		if [ "$CONFIG_FLOPPY_SUPPORT_35DD" = "y" ]; then
 			choice 'Drive A type' \
 				"Not_installed   CONFIG_FLOPPY_A_NONE \
+				 180K_5.25SD    CONFIG_FLOPPY_A_180K \
 				 360K_5.25DD    CONFIG_FLOPPY_A_360K \
 				 720K_3.5DD     CONFIG_FLOPPY_A_720K" 360K_5.25DD
 
 			choice 'Drive B type' \
 				"Not_installed   CONFIG_FLOPPY_B_NONE \
+				 180K_5.25SD    CONFIG_FLOPPY_B_180K \
 				 360K_5.25DD    CONFIG_FLOPPY_B_360K \
 				 720K_3.5DD     CONFIG_FLOPPY_B_720K" 360K_5.25DD
 		else
 			choice 'Drive A type' \
 				"Not_installed   CONFIG_FLOPPY_A_NONE \
+				 180K_5.25SD    CONFIG_FLOPPY_A_180K \
 				 360K_5.25DD    CONFIG_FLOPPY_A_360K" 360K_5.25DD
 
 			choice 'Drive B type' \
 				"Not_installed   CONFIG_FLOPPY_B_NONE \
+				 180K_5.25SD    CONFIG_FLOPPY_B_180K \
 				 360K_5.25DD    CONFIG_FLOPPY_B_360K" 360K_5.25DD
 		fi
 	fi

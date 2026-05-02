@@ -197,6 +197,7 @@ OPTIONS = [
         "default": "360k_525dd",
         "choices": [
             ("none", "Not installed"),
+            ("180k_525sd", "180K 5.25\" single-sided DD"),
             ("360k_525dd", "360K 5.25\" DD"),
             ("720k_35dd", "720K 3.5\" DD"),
         ],
@@ -208,6 +209,7 @@ OPTIONS = [
         "default": "360k_525dd",
         "choices": [
             ("none", "Not installed"),
+            ("180k_525sd", "180K 5.25\" single-sided DD"),
             ("360k_525dd", "360K 5.25\" DD"),
             ("720k_35dd", "720K 3.5\" DD"),
         ],
@@ -519,6 +521,7 @@ VIDEO_EQUIPMENT_MAP = {
 
 FLOPPY_TYPE_MAP = {
     "none": ("BIOS_FLOPPY_TYPE_NONE", 0x00, "none"),
+    "180k_525sd": ("BIOS_FLOPPY_TYPE_180K_525SD", 0x01, "180K"),
     "360k_525dd": ("BIOS_FLOPPY_TYPE_360K_525DD", 0x01, "360K"),
     "720k_35dd": ("BIOS_FLOPPY_TYPE_720K_35DD", 0x03, "720K"),
 }

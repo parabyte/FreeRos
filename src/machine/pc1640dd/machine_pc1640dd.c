@@ -42,6 +42,59 @@ pc1640_switch_latch_read (u16 latch_port)
 }
 
 static u8
+pc1640_read_video_switch_block (void)
+{
+  u8 value;
+
+  asm volatile (
+    "pushf\n\t"
+    "cli\n\t"
+    "movw $0x03c2, %%dx\n\t"
+    "movb $0xf0, %%ah\n\t"
+    "movb $0x4f, %%al\n\t"
+    "outb %%al, %%dx\n\t"
+    "inb %%dx, %%al\n\t"
+    "testb $0x10, %%al\n\t"
+    "jz 1f\n\t"
+    "orb $0x01, %%ah\n"
+    "1:\n\t"
+    "movb $0x4b, %%al\n\t"
+    "outb %%al, %%dx\n\t"
+    "inb %%dx, %%al\n\t"
+    "testb $0x10, %%al\n\t"
+    "jz 2f\n\t"
+    "orb $0x02, %%ah\n"
+    "2:\n\t"
+    "movb $0x43, %%al\n\t"
+    "outb %%al, %%dx\n\t"
+    "inb %%dx, %%al\n\t"
+    "testb $0x10, %%al\n\t"
+    "jz 3f\n\t"
+    "orb $0x08, %%ah\n"
+    "3:\n\t"
+    "movb $0x47, %%al\n\t"
+    "outb %%al, %%dx\n\t"
+    "inb %%dx, %%al\n\t"
+    "testb $0x10, %%al\n\t"
+    "jz 4f\n\t"
+    "orb $0x04, %%ah\n"
+    "4:\n\t"
+    "movb %%ah, %%al\n\t"
+    "popf"
+    : "=a" (value)
+    :
+    : "dx", "memory", "cc");
+
+  return value;
+}
+
+static void
+pc1640_publish_video_switch_block (void)
+{
+  bios_bda_write8 (BDA_VIDEO_SWITCHES, pc1640_read_video_switch_block ());
+}
+
+static u8
 pc1640_switch_status_read (void)
 {
   return pc1640_switch_latch_read (PORT_PC1640_SW10_LATCH);
@@ -50,16 +103,11 @@ pc1640_switch_status_read (void)
 static int
 pc1640_language_rom_enabled (void)
 {
-  u8 language;
+  u8 links;
 
-  /*
-   * 86Box reports the stock English PC1640 strap as 111b on port 379h.
-   * Treat both the legacy zero case and the English code as valid so the
-   * PEGA/language ROM path still runs on the emulated machine.
-   */
-  language = (u8) (bios_hw_in8 (PORT_LPT1_STATUS) & LPT1_STATUS_LANGUAGE_MASK);
-  return language == 0
-    || language == (BIOS_LANG_ENGLISH & LPT1_STATUS_LANGUAGE_MASK);
+  /* PC1640 language links are inverted on the printer status low bits. */
+  links = (u8) (bios_hw_in8 (PORT_LPT1_STATUS) & LPT1_STATUS_LANGUAGE_MASK);
+  return links == LPT1_STATUS_DECODE_LANGUAGE (BIOS_LANG_ENGLISH);
 }
 
 static int
@@ -626,8 +674,10 @@ pc1640_int15_mouse_read_reset (bios_regs_t __far *regs)
   signed char x;
   signed char y;
 
-  x = (signed char) bios_io_read (PORT_MOUSE_X);
-  y = (signed char) bios_io_read (PORT_MOUSE_Y);
+  x = (signed char) bios_hw_in8 (PORT_MOUSE_X);
+  y = (signed char) bios_hw_in8 (PORT_MOUSE_Y);
+  bios_hw_out8 (0x00, PORT_MOUSE_X);
+  bios_hw_out8 (0x00, PORT_MOUSE_Y);
   regs->cx = (u16) (int) x;
   regs->dx = (u16) (int) y;
   bios_set_hi (&regs->ax, 0x00);
@@ -794,6 +844,7 @@ machine_post_publish_runtime_state (u16 size_kb, u8 boot_flags,
   bios_bda_write16 (BDA_MEMORY_SIZE_KB, size_kb);
   bios_bda_write16 (BDA_EXTRA_MEMORY_KB,
                     size_kb > 64 ? (u16) (size_kb - 64) : 0);
+  pc1640_publish_video_switch_block ();
   pc1640_publish_detected_io_state ();
   bios_work_write8 (WK_BOOT_FLAGS, boot_flags);
 
@@ -835,7 +886,6 @@ machine_equipment_video_bits (void)
     return BIOS_CFG_VIDEO_EQUIPMENT_80X25_COLOR;
 
   if ((control & (LPT1_CONTROL_SWITCH_SW7 | LPT1_CONTROL_SWITCH_SW6)) == 0)
-    /* The original PC1640 ROS reports XT-compatible 80x25 color here. */
     return BIOS_CFG_VIDEO_EQUIPMENT_80X25_COLOR;
 
   if ((control & (LPT1_CONTROL_SWITCH_SW7 | LPT1_CONTROL_SWITCH_SW6))
@@ -852,10 +902,6 @@ machine_equipment_video_bits (void)
 u8
 machine_default_text_mode (void)
 {
-  if (BIOS_CFG_VIDEO_USE_PC1640_SWITCH_BLOCK
-      && (pc1640_switch_status_read () & LPT1_CONTROL_SWITCH_SW10) == 0)
-    return VIDEO_MODE_80X25_COLOR;
-
   switch (machine_equipment_video_bits ())
     {
     case BIOS_CFG_VIDEO_EQUIPMENT_40X25_COLOR:

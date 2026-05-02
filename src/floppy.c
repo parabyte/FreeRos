@@ -21,6 +21,8 @@ typedef struct bios_floppy_drive_geometry
 #define BIOS_FIXED_DISK_DPT0_OFF 0x0530
 #define BIOS_FIXED_DISK_DPT1_OFF 0x0540
 #define BIOS_FIXED_DISK_DPT_SIZE 16
+#define BIOS_FLOPPY_CONFIG_USES_TYPE(type)                                     \
+  (BIOS_CFG_FLOPPY_TYPE_A == (type) || BIOS_CFG_FLOPPY_TYPE_B == (type))
 
 #if BIOS_CFG_TARGET_PC1640DD && !BIOS_CFG_XTIDE_ENABLED
 #define BIOS_PC1640_FLOPPY_DPT_ATTR __attribute__((section(".rodata.compat_floppy")))
@@ -131,6 +133,18 @@ bios_floppy_geometry (u8 drive, bios_floppy_drive_geometry_t *geom)
   type = bios_floppy_configured_type (drive);
   switch (type)
     {
+#if BIOS_FLOPPY_CONFIG_USES_TYPE(BIOS_FLOPPY_TYPE_180K_525SD)
+    case BIOS_FLOPPY_TYPE_180K_525SD:
+      geom->type = BIOS_FLOPPY_TYPE_360K_525DD;
+      geom->tracks = 40;
+      geom->heads = 1;
+      geom->sectors = 9;
+      geom->data_rate = 0x02;
+      geom->parameter_table = bios_diskette_parameter_table;
+      return 1;
+#endif
+
+#if BIOS_FLOPPY_CONFIG_USES_TYPE(BIOS_FLOPPY_TYPE_360K_525DD)
     case BIOS_FLOPPY_TYPE_360K_525DD:
       geom->type = type;
       geom->tracks = 40;
@@ -139,7 +153,9 @@ bios_floppy_geometry (u8 drive, bios_floppy_drive_geometry_t *geom)
       geom->data_rate = 0x02;
       geom->parameter_table = bios_diskette_parameter_table;
       return 1;
+#endif
 
+#if BIOS_FLOPPY_CONFIG_USES_TYPE(BIOS_FLOPPY_TYPE_720K_35DD)
     case BIOS_FLOPPY_TYPE_720K_35DD:
       geom->type = type;
       geom->tracks = 80;
@@ -148,6 +164,7 @@ bios_floppy_geometry (u8 drive, bios_floppy_drive_geometry_t *geom)
       geom->data_rate = 0x02;
       geom->parameter_table = bios_diskette_parameter_table;
       return 1;
+#endif
 
     default:
       return 0;
@@ -1122,7 +1139,7 @@ bios_floppy_format_track (bios_regs_t __far *regs)
 
     flags = bios_hw_irq_save_disable ();
     bios_hw_out8 ((u8) (DMA_CH2 | 0x04), PORT_DMA1_MASK);
-    bios_hw_out8 ((u8) (DMA_CH2 | 0x04), PORT_DMA1_CLEAR_FF);
+    bios_hw_out8 (0x00, PORT_DMA1_CLEAR_FF);
     bios_hw_out8 ((u8) (dma_addr & 0xFF), PORT_DMA_CH2_ADDR);
     bios_hw_out8 ((u8) ((dma_addr >> 8) & 0xFF), PORT_DMA_CH2_ADDR);
     bios_hw_out8 ((u8) ((dma_addr >> 16) & 0xFF), PORT_DMA_PAGE_CH2);

@@ -37,11 +37,11 @@ pega_clear_text_vram (u8 attr)
 }
 
 static void
-pega_attr_write (u8 index, u8 value)
+pega_attr_write (u16 status_port, u8 index, u8 value)
 {
-  (void) bios_hw_in8 (PORT_CGA_STATUS);
-  bios_hw_out8 (PORT_VIDEO_ATTR, index);
-  bios_hw_out8 (PORT_VIDEO_ATTR, value);
+  (void) bios_hw_in8 (status_port);
+  bios_hw_out8 (index, PORT_VIDEO_ATTR);
+  bios_hw_out8 (value, PORT_VIDEO_ATTR);
 }
 
 static void
@@ -51,29 +51,29 @@ pega_crtc_write_block (u16 crtc_base, const u8 *regs, u8 count)
 
   for (i = 0; i < count; i++)
     {
-      bios_hw_out8 (crtc_base, i);
-      bios_hw_out8 ((u16) (crtc_base + 1U), regs[i]);
+      bios_hw_out8 (i, crtc_base);
+      bios_hw_out8 (regs[i], (u16) (crtc_base + 1U));
     }
 }
 
 static void
-pega_load_font (void)
+pega_load_font (int mono)
 {
   u16 ch;
   u16 row;
 
-  bios_hw_out8 (PORT_VIDEO_SEQU_ADDR, 0x02);
-  bios_hw_out8 (PORT_VIDEO_SEQU_DATA, 0x04);
-  bios_hw_out8 (PORT_VIDEO_SEQU_ADDR, 0x04);
-  bios_hw_out8 (PORT_VIDEO_SEQU_DATA, 0x06);
-  bios_hw_out8 (PORT_VIDEO_SEQU_ADDR, 0x03);
-  bios_hw_out8 (PORT_VIDEO_SEQU_DATA, 0x00);
-  bios_hw_out8 (PORT_VIDEO_GRDC_ADDR, 0x05);
-  bios_hw_out8 (PORT_VIDEO_GRDC_DATA, 0x10);
-  bios_hw_out8 (PORT_VIDEO_GRDC_ADDR, 0x06);
-  bios_hw_out8 (PORT_VIDEO_GRDC_DATA, 0x04);
-  bios_hw_out8 (PORT_VIDEO_GRDC_ADDR, 0x04);
-  bios_hw_out8 (PORT_VIDEO_GRDC_DATA, 0x02);
+  bios_hw_out8 (0x02, PORT_VIDEO_SEQU_ADDR);
+  bios_hw_out8 (0x04, PORT_VIDEO_SEQU_DATA);
+  bios_hw_out8 (0x04, PORT_VIDEO_SEQU_ADDR);
+  bios_hw_out8 (0x06, PORT_VIDEO_SEQU_DATA);
+  bios_hw_out8 (0x03, PORT_VIDEO_SEQU_ADDR);
+  bios_hw_out8 (0x00, PORT_VIDEO_SEQU_DATA);
+  bios_hw_out8 (0x05, PORT_VIDEO_GRDC_ADDR);
+  bios_hw_out8 (0x10, PORT_VIDEO_GRDC_DATA);
+  bios_hw_out8 (0x06, PORT_VIDEO_GRDC_ADDR);
+  bios_hw_out8 (0x04, PORT_VIDEO_GRDC_DATA);
+  bios_hw_out8 (0x04, PORT_VIDEO_GRDC_ADDR);
+  bios_hw_out8 (0x02, PORT_VIDEO_GRDC_DATA);
 
   for (ch = 0; ch < 256; ++ch)
     {
@@ -96,30 +96,30 @@ pega_load_font (void)
 	bios_abs_write8 (0xA000, (u16) (off + row), 0);
     }
 
-  bios_hw_out8 (PORT_VIDEO_GRDC_ADDR, 0x04);
-  bios_hw_out8 (PORT_VIDEO_GRDC_DATA, 0x00);
-  bios_hw_out8 (PORT_VIDEO_GRDC_ADDR, 0x05);
-  bios_hw_out8 (PORT_VIDEO_GRDC_DATA, 0x10);
-  bios_hw_out8 (PORT_VIDEO_GRDC_ADDR, 0x06);
-  bios_hw_out8 (PORT_VIDEO_GRDC_DATA, 0x0E);
-  bios_hw_out8 (PORT_VIDEO_SEQU_ADDR, 0x02);
-  bios_hw_out8 (PORT_VIDEO_SEQU_DATA, 0x03);
-  bios_hw_out8 (PORT_VIDEO_SEQU_ADDR, 0x04);
-  bios_hw_out8 (PORT_VIDEO_SEQU_DATA, 0x02);
+  bios_hw_out8 (0x04, PORT_VIDEO_GRDC_ADDR);
+  bios_hw_out8 (0x00, PORT_VIDEO_GRDC_DATA);
+  bios_hw_out8 (0x05, PORT_VIDEO_GRDC_ADDR);
+  bios_hw_out8 (0x10, PORT_VIDEO_GRDC_DATA);
+  bios_hw_out8 (0x06, PORT_VIDEO_GRDC_ADDR);
+  bios_hw_out8 (mono ? (u8) 0x0A : (u8) 0x0E, PORT_VIDEO_GRDC_DATA);
+  bios_hw_out8 (0x02, PORT_VIDEO_SEQU_ADDR);
+  bios_hw_out8 (0x03, PORT_VIDEO_SEQU_DATA);
+  bios_hw_out8 (0x04, PORT_VIDEO_SEQU_ADDR);
+  bios_hw_out8 (0x02, PORT_VIDEO_SEQU_DATA);
 }
 
 static void
-pega_attribute_palette (void)
+pega_attribute_palette (u16 status_port)
 {
   u8 i;
 
   for (i = 0; i < 0x10; ++i)
-    pega_attr_write (i, i);
-  pega_attr_write (0x10, 0x0C);
-  pega_attr_write (0x11, 0x00);
-  pega_attr_write (0x12, 0x0F);
-  pega_attr_write (0x13, 0x08);
-  pega_attr_write (0x14, 0x00);
+    pega_attr_write (status_port, i, i);
+  pega_attr_write (status_port, 0x10, 0x0C);
+  pega_attr_write (status_port, 0x11, 0x00);
+  pega_attr_write (status_port, 0x12, 0x0F);
+  pega_attr_write (status_port, 0x13, 0x08);
+  pega_attr_write (status_port, 0x14, 0x00);
 }
 
 void
@@ -127,6 +127,7 @@ bios_video_pega_program_hardware (u8 mode)
 {
   int mono;
   u16 crtc;
+  u16 status_port;
 
   static const u8 crtc_80x25_color[25] = {
     0x5F, 0x4F, 0x50, 0x82, 0x55, 0x81, 0xBF, 0x1F, 0x00, 0x4F, 0x0D,
@@ -146,22 +147,25 @@ bios_video_pega_program_hardware (u8 mode)
 
   mono = (mode == VIDEO_MODE_80X25_MONO);
   crtc = mono ? PORT_MDA_CRTC_ADDR : PORT_CRTC_ADDR;
+  status_port = mono ? PORT_MDA_STATUS : PORT_CGA_STATUS;
 
-  bios_hw_out8 (PORT_VIDEO_SEQU_ADDR, 0x00);
-  bios_hw_out8 (PORT_VIDEO_SEQU_DATA, 0x01);
+  bios_hw_out8 (0x00, PORT_VIDEO_SEQU_ADDR);
+  bios_hw_out8 (0x01, PORT_VIDEO_SEQU_DATA);
 
-  bios_hw_out8 (PORT_VIDEO_MISC_OUTPUT, mono ? (u8) 0xA0 : (u8) 0x67);
+  bios_hw_out8 (mono ? (u8) PC1640_EGC_CONTROL_MONO_TEXT
+                     : (u8) PC1640_EGC_CONTROL_COLOR_TEXT,
+                PORT_VIDEO_MISC_OUTPUT);
 
-  bios_hw_out8 (PORT_VIDEO_SEQU_ADDR, 0x01);
-  bios_hw_out8 (PORT_VIDEO_SEQU_DATA, 0x00);
-  bios_hw_out8 (PORT_VIDEO_SEQU_ADDR, 0x02);
-  bios_hw_out8 (PORT_VIDEO_SEQU_DATA, 0x03);
-  bios_hw_out8 (PORT_VIDEO_SEQU_ADDR, 0x03);
-  bios_hw_out8 (PORT_VIDEO_SEQU_DATA, 0x00);
-  bios_hw_out8 (PORT_VIDEO_SEQU_ADDR, 0x04);
-  bios_hw_out8 (PORT_VIDEO_SEQU_DATA, 0x02);
-  bios_hw_out8 (PORT_VIDEO_SEQU_ADDR, 0x00);
-  bios_hw_out8 (PORT_VIDEO_SEQU_DATA, 0x03);
+  bios_hw_out8 (0x01, PORT_VIDEO_SEQU_ADDR);
+  bios_hw_out8 (0x00, PORT_VIDEO_SEQU_DATA);
+  bios_hw_out8 (0x02, PORT_VIDEO_SEQU_ADDR);
+  bios_hw_out8 (0x03, PORT_VIDEO_SEQU_DATA);
+  bios_hw_out8 (0x03, PORT_VIDEO_SEQU_ADDR);
+  bios_hw_out8 (0x00, PORT_VIDEO_SEQU_DATA);
+  bios_hw_out8 (0x04, PORT_VIDEO_SEQU_ADDR);
+  bios_hw_out8 (0x02, PORT_VIDEO_SEQU_DATA);
+  bios_hw_out8 (0x00, PORT_VIDEO_SEQU_ADDR);
+  bios_hw_out8 (0x03, PORT_VIDEO_SEQU_DATA);
 
   switch (mode)
     {
@@ -177,39 +181,39 @@ bios_video_pega_program_hardware (u8 mode)
       break;
     }
 
-  bios_hw_out8 (PORT_VIDEO_GRDC_ADDR, 0x00);
-  bios_hw_out8 (PORT_VIDEO_GRDC_DATA, 0x00);
-  bios_hw_out8 (PORT_VIDEO_GRDC_ADDR, 0x01);
-  bios_hw_out8 (PORT_VIDEO_GRDC_DATA, 0x00);
-  bios_hw_out8 (PORT_VIDEO_GRDC_ADDR, 0x02);
-  bios_hw_out8 (PORT_VIDEO_GRDC_DATA, 0x00);
-  bios_hw_out8 (PORT_VIDEO_GRDC_ADDR, 0x03);
-  bios_hw_out8 (PORT_VIDEO_GRDC_DATA, 0x00);
-  bios_hw_out8 (PORT_VIDEO_GRDC_ADDR, 0x04);
-  bios_hw_out8 (PORT_VIDEO_GRDC_DATA, 0x00);
-  bios_hw_out8 (PORT_VIDEO_GRDC_ADDR, 0x05);
-  bios_hw_out8 (PORT_VIDEO_GRDC_DATA, 0x10);
-  bios_hw_out8 (PORT_VIDEO_GRDC_ADDR, 0x06);
-  bios_hw_out8 (PORT_VIDEO_GRDC_DATA, mono ? (u8) 0x0A : (u8) 0x0E);
-  bios_hw_out8 (PORT_VIDEO_GRDC_ADDR, 0x07);
-  bios_hw_out8 (PORT_VIDEO_GRDC_DATA, 0x00);
-  bios_hw_out8 (PORT_VIDEO_GRDC_ADDR, 0x08);
-  bios_hw_out8 (PORT_VIDEO_GRDC_DATA, 0xFF);
+  bios_hw_out8 (0x00, PORT_VIDEO_GRDC_ADDR);
+  bios_hw_out8 (0x00, PORT_VIDEO_GRDC_DATA);
+  bios_hw_out8 (0x01, PORT_VIDEO_GRDC_ADDR);
+  bios_hw_out8 (0x00, PORT_VIDEO_GRDC_DATA);
+  bios_hw_out8 (0x02, PORT_VIDEO_GRDC_ADDR);
+  bios_hw_out8 (0x00, PORT_VIDEO_GRDC_DATA);
+  bios_hw_out8 (0x03, PORT_VIDEO_GRDC_ADDR);
+  bios_hw_out8 (0x00, PORT_VIDEO_GRDC_DATA);
+  bios_hw_out8 (0x04, PORT_VIDEO_GRDC_ADDR);
+  bios_hw_out8 (0x00, PORT_VIDEO_GRDC_DATA);
+  bios_hw_out8 (0x05, PORT_VIDEO_GRDC_ADDR);
+  bios_hw_out8 (0x10, PORT_VIDEO_GRDC_DATA);
+  bios_hw_out8 (0x06, PORT_VIDEO_GRDC_ADDR);
+  bios_hw_out8 (mono ? (u8) 0x0A : (u8) 0x0E, PORT_VIDEO_GRDC_DATA);
+  bios_hw_out8 (0x07, PORT_VIDEO_GRDC_ADDR);
+  bios_hw_out8 (0x00, PORT_VIDEO_GRDC_DATA);
+  bios_hw_out8 (0x08, PORT_VIDEO_GRDC_ADDR);
+  bios_hw_out8 (0xFF, PORT_VIDEO_GRDC_DATA);
 
-  pega_attribute_palette ();
+  pega_attribute_palette (status_port);
 
   if (mono)
     {
-      bios_hw_out8 ((u16) 0x03B8, 0x09);
+      bios_hw_out8 (0x09, (u16) 0x03B8);
       (void) bios_hw_in8 (PORT_MDA_STATUS);
     }
   else
     {
-      bios_hw_out8 (PORT_CGA_MODE, 0x09);
+      bios_hw_out8 (0x09, PORT_CGA_MODE);
       (void) bios_hw_in8 (PORT_CGA_STATUS);
     }
 
-  pega_load_font ();
+  pega_load_font (mono);
 }
 
 void

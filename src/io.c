@@ -35,12 +35,14 @@ static const u8 bios_cmos_defaults[64] = {
 static u8
 bios_io_lpt1_status_live (void)
 {
+  u8 raw;
   u8 value;
 
-  value = (u8) ((bios_hw_in8 (PORT_LPT1_STATUS) & 0xF8)
-		| (BIOS_LANG_ENGLISH & LPT1_STATUS_LANGUAGE_MASK));
+  raw = bios_hw_in8 (PORT_LPT1_STATUS);
   if (!BIOS_CFG_VIDEO_USE_PC1640_SWITCH_BLOCK)
     value = BIOS_CFG_LPT1_STATUS;
+  else
+    value = raw;
 
   bios_work_write8 (WK_LPT1_STATUS, value);
   return value;
@@ -145,13 +147,15 @@ bios_io_read (u16 port)
 
     case PORT_SYSSTAT2_RD:
       {
+	u8 live;
 	u8 value;
 
+	live = bios_hw_in8 (PORT_SYSSTAT2_RD);
 	if ((bios_work_read8 (WK_PORT61) & PORT61_NVR_LOW_NIBBLE) != 0)
 	  value = (u8) (bios_work_read8 (WK_PORT65) & 0x0F);
 	else
 	  value = (u8) (bios_work_read8 (WK_PORT65) >> 4);
-	return value;
+	return (u8) ((live & 0xF0) | (value & 0x0F));
       }
 
     case PORT_CMOS_ADDR:
