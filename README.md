@@ -33,3 +33,10 @@ Primary outputs
 - `build/40043.v3`
 - `build/40044.v3`
 - `build/pega_video_32k.bin`
+
+Hardware findings
+-----------------
+See [PC1640 PEGA hardware findings](docs/pega-hardware-findings.md) for the
+physical ROM evidence, monitor and timing tables, cursor limitations, font RAM,
+and graphics-pointer acceleration results.
+

@@ -1,0 +1,67 @@
+{
+  "date": "2026-10-31",
+  "machine": "Amstrad PC1640",
+  "adapter": "Paradise PEGA1A",
+  "rom": {
+    "identity": "PEGA BIOS VERSION 2.015 RKG",
+    "captured_bytes": 16384,
+    "checksum8": 0,
+    "sha256": "f513b1d009e80af8dd70ee922f27d05574c383a59ca1cebfc05bf6f22d12aeaa",
+    "method": "Read C000 ROM; no video register or font RAM writes",
+    "font_loader_offset": "0572",
+    "private_03df_access_ranges": [
+      "0138-0162",
+      "1300-13a9"
+    ]
+  },
+  "video_parameter_entries": {
+    "0e": {
+      "description": "640x200 colour CD",
+      "rom_offset": "23c0",
+      "bytes_hex": "50 18 08 00 40 01 0f 00 06 23 70 4f 59 2d 5e 06 04 11 00 00 00 00 00 00 00 00 e0 23 c7 28 00 df ef e3 ff 00 01 02 03 04 05 06 07 10 11 12 13 14 15 16 17 01 00 0f 00 00 00 00 00 00 00 05 0f ff",
+      "sequencer_1_to_4": "01 0f 00 06",
+      "misc_output": "23",
+      "crtc_0_to_24": "70 4f 59 2d 5e 06 04 11 00 00 00 00 00 00 00 00 e0 23 c7 28 00 df ef e3 ff",
+      "attribute_0_to_19": "00 01 02 03 04 05 06 07 10 11 12 13 14 15 16 17 01 00 0f 00",
+      "graphics_0_to_8": "00 00 00 00 00 00 05 0f ff"
+    },
+    "0f": {
+      "description": "640x350 monochrome MD",
+      "rom_offset": "2480",
+      "bytes_hex": "50 18 0e 00 80 01 0f 00 06 a2 60 4f 56 3a 50 60 70 1f 00 00 00 00 00 00 00 00 5e 2e 5d 28 0d 5e 6e e3 ff 00 08 00 00 18 18 00 00 00 08 00 00 00 18 00 00 0b 00 05 00 00 00 00 00 00 00 05 0f ff",
+      "sequencer_1_to_4": "01 0f 00 06",
+      "misc_output": "a2",
+      "crtc_0_to_24": "60 4f 56 3a 50 60 70 1f 00 00 00 00 00 00 00 00 5e 2e 5d 28 0d 5e 6e e3 ff",
+      "attribute_0_to_19": "00 08 00 00 18 18 00 00 00 08 00 00 00 18 00 00 0b 00 05 00",
+      "graphics_0_to_8": "00 00 00 00 00 00 05 0f ff"
+    },
+    "10": {
+      "description": "640x350 colour ECD",
+      "rom_offset": "24c0",
+      "bytes_hex": "50 18 0e 00 80 01 0f 00 06 a7 5b 4f 53 37 52 00 6c 1f 00 00 00 00 00 00 00 00 5e 2b 5d 28 0f 5f 0a e3 ff 00 01 02 03 04 05 14 07 38 39 3a 3b 3c 3d 3e 3f 01 00 0f 00 00 00 00 00 00 00 05 0f ff",
+      "sequencer_1_to_4": "01 0f 00 06",
+      "misc_output": "a7",
+      "crtc_0_to_24": "5b 4f 53 37 52 00 6c 1f 00 00 00 00 00 00 00 00 5e 2b 5d 28 0f 5f 0a e3 ff",
+      "attribute_0_to_19": "00 01 02 03 04 05 14 07 38 39 3a 3b 3c 3d 3e 3f 01 00 0f 00",
+      "graphics_0_to_8": "00 00 00 00 00 00 05 0f ff"
+    }
+  },
+  "graphics_cursor_model": {
+    "cases": 132,
+    "before": {
+      "instructions": 2776036,
+      "video_reads": 28368,
+      "video_writes": 44688,
+      "port_writes": 8208
+    },
+    "after": {
+      "instructions": 1336040,
+      "video_reads": 20968,
+      "video_writes": 20968,
+      "port_writes": 13624
+    },
+    "instruction_reduction_percent": 51.9,
+    "physical_timing_measured": false
+  },
+  "conclusion": "Font RAM is programmable in text mode. No evidence found for a separate graphics cursor. The CRTC text cursor cannot overlay GEM graphics."
+}
